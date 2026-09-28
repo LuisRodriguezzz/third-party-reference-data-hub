@@ -1,0 +1,33 @@
+[project]
+name = "refhub"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Luis Alberto Rodriguez", email = "alberto.rodriguezaguilar@ingenieria.uner.edu.ar" }
+]
+requires-python = ">=3.11,<3.13"
+dependencies = []
+
+[project.scripts]
+refhub = "refhub:main"
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]   # errores, imports ordenados, sintaxis moderna, bugs comunes
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
