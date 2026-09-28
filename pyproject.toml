@@ -1,7 +1,7 @@
 [project]
 name = "refhub"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hub de datos de referencia de terceros: golden copy de empresas e instrumentos (GLEIF, OpenFIGI, SEC EDGAR) con catálogo de datasets y licencias legibles por máquina (DCAT y ODRL)."
 readme = "README.md"
 authors = [
     { name = "Luis Alberto Rodriguez", email = "alberto.rodriguezaguilar@ingenieria.uner.edu.ar" }
