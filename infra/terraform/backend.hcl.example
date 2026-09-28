@@ -1,0 +1,2 @@
+bucket = "refhub-tfstate-<tu-numero-de-cuenta>"
+key    = "hub/dev.tfstate"
