@@ -6,7 +6,13 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    archive = {
+      source  = "hashicorp/archive" # arma el zip con tu código
+      version = "~> 2.8"
+    }
   }
+
+
 
   backend "s3" {
     # bucket y key van en backend.hcl: dependen de la cuenta y del ambiente
