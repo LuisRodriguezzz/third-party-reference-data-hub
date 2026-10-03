@@ -5,3 +5,7 @@ output "data_bucket" {
 output "gleif_lambda_name" {
   value = aws_lambda_function.gleif.function_name
 }
+
+output "gleif_state_machine_arn" {
+  value = aws_sfn_state_machine.gleif.arn
+}
