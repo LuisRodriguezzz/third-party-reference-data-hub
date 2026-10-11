@@ -14,3 +14,9 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+
+variable "refhub_version" {
+  description = "Versión del paquete refhub (.whl) que usan los jobs de Glue. Tiene que existir en S3."
+  type        = string
+  default     = "0.2.0"
+}

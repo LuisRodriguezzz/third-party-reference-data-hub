@@ -9,6 +9,7 @@ import urllib.request
 import zipfile
 from collections import Counter
 from collections.abc import Iterable, Iterator
+from datetime import date
 from pathlib import Path
 
 from refhub.lei import lei_problem
@@ -38,6 +39,23 @@ def latest_delta_url(kind: str = "LastDay") -> str:
     return data["lei2"]["delta_files"][kind]["csv"]["url"]
 
 
+def latest_full_url() -> str:
+    """URL del último archivo completo de GLEIF (~480 MB en zip, ~3,4 millones de LEIs)."""
+    with urllib.request.urlopen(PUBLISHES_URL, timeout=30) as resp:
+        data = json.load(resp)["data"]
+    return data["lei2"]["full_file"]["csv"]["url"]
+
+
+def publish_date(name: str) -> date:
+    """Fecha de publicación que GLEIF pone al principio del nombre del archivo."""
+    match = _PUBLISH_DATE.match(name)
+    if match is None:
+        # Si GLEIF cambia el formato del nombre, mejor fallar que inventar una fecha.
+        raise ValueError(f"No encuentro la fecha de publicación en {name!r}")
+    year, month, day = (int(part) for part in match.groups())
+    return date(year, month, day)
+
+
 def landing_key(url: str) -> str:
     """Dónde se guarda el archivo: landing/gleif/dt=<fecha de publicación>/<nombre original>.
 
@@ -45,12 +63,7 @@ def landing_key(url: str) -> str:
     el mismo archivo va siempre a la misma carpeta, lo bajes hoy o dentro de una semana.
     """
     name = url.rsplit("/", 1)[-1]
-    match = _PUBLISH_DATE.match(name)
-    if match is None:
-        # Si GLEIF cambia el formato del nombre, mejor fallar que inventar una fecha.
-        raise ValueError(f"No encuentro la fecha de publicación en {name!r}")
-    year, month, day = match.groups()
-    return f"landing/gleif/dt={year}-{month}-{day}/{name}"
+    return f"landing/gleif/dt={publish_date(name).isoformat()}/{name}"
 
 
 def download(url: str, dest_dir: Path) -> Path:
