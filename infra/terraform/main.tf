@@ -55,6 +55,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
       days = 7
     }
   }
+  # Los temporales (el CSV descomprimido, archivos de trabajo de Glue) se borran solos al día.
+  rule {
+    id     = "borrar-temporales"
+    status = "Enabled"
+
+    filter {
+      prefix = "tmp/"
+    }
+
+    expiration {
+      days = 1
+    }
+  }
+
 }
 
 resource "aws_budgets_budget" "mensual" {
