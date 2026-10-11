@@ -1,6 +1,7 @@
 variable "alert_email" {
   description = "Mail que recibe las alertas de presupuesto. Va en terraform.tfvars, que NO se sube a git."
   type        = string
+  sensitive   = true
 }
 
 variable "monthly_budget_usd" {

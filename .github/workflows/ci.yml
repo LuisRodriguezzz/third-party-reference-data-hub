@@ -6,12 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# Por defecto, el token de GitHub de cada job solo puede leer el repo.
+permissions:
+  contents: read
+
 jobs:
   lint-y-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar uv
         uses: astral-sh/setup-uv@v6
@@ -30,3 +34,136 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+  terraform-plan:
+    # En cada pull request: muestra qué cambiaría en AWS, sin cambiar nada.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # para el checkout
+      id-token: write # para pedirle a GitHub el token OIDC que AWS acepta
+      pull-requests: write # para escribir el plan como comentario del PR
+    env:
+      TF_IN_AUTOMATION: "true" # mensajes de Terraform pensados para un CI
+      TF_INPUT: "false" # si falta un dato, que falle en vez de quedarse esperando
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }} # la variable alert_email, desde un secreto
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }} # lo que tenías en backend.hcl
+    defaults:
+      run:
+        working-directory: infra/terraform # los "run" de este job corren desde acá
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8 # la misma versión que usás en tu máquina
+          terraform_wrapper: false # la salida de Terraform tal cual
+
+      - name: Entrar a AWS con OIDC (rol de plan, solo lectura)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_PLAN }}
+          aws-region: us-east-1
+
+      - name: Formato
+        run: terraform fmt -check -recursive # también revisa bootstrap/
+
+      - name: Init
+        run: |
+          test -n "$TF_VAR_alert_email" || { echo "::error::Falta el secreto ALERT_EMAIL"; exit 1; }
+          terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=hub/dev.tfstate"
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        id: plan
+        run: |
+          terraform plan -no-color -lock-timeout=5m -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Comentar el plan en el PR
+        if: always() && steps.plan.outcome != 'skipped' # también si el plan falló
+        uses: actions/github-script@v9
+        env:
+          RESULTADO: ${{ steps.plan.outcome }}
+        with:
+          script: |
+            const fs = require("fs");
+            const marca = "<!-- refhub-terraform-plan -->"; // para encontrar el comentario después
+            const sha = context.payload.pull_request.head.sha.substring(0, 7);
+            let cuerpo = `${marca}\n### Terraform plan · commit ${sha}\n\n`;
+            if (process.env.RESULTADO === "success") {
+              let plan = fs.readFileSync("infra/terraform/plan.txt", "utf8");
+              const resumen = plan.match(/^(Plan: .*|No changes\..*)$/m);
+              if (plan.length > 60000) {
+                // un comentario admite hasta 65.536 caracteres
+                plan = plan.substring(0, 60000) + "\n... (recortado: el plan entero está en el log)";
+              }
+              cuerpo += `**${resumen ? resumen[0] : "Plan sin resumen"}**\n\n`;
+              cuerpo += "<details><summary>Ver el plan completo</summary>\n\n```\n" + plan + "\n```\n</details>";
+            } else {
+              cuerpo += "**El plan falló.** Mirá el log del job terraform-plan en la pestaña Actions.";
+            }
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comentarios = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const anterior = comentarios.find(
+              (c) => c.user.type === "Bot" && c.body.includes(marca),
+            );
+            if (anterior) {
+              // un solo comentario por PR, que se actualiza en cada push
+              await github.rest.issues.updateComment({ owner, repo, comment_id: anterior.id, body: cuerpo });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: cuerpo });
+            }
+
+  terraform-apply:
+    # Al mergear (un push a main): aplica en AWS. Es el único lugar donde se aplica el hub.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: lint-y-tests # si ruff o los tests fallan, no se aplica nada
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: terraform-apply-dev # nunca dos apply a la vez sobre el mismo state
+      cancel-in-progress: false # un apply que empezó no se corta: termina
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Entrar a AWS con OIDC (rol de apply)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_APPLY }}
+          aws-region: us-east-1
+
+      - name: Init
+        run: |
+          test -n "$TF_VAR_alert_email" || { echo "::error::Falta el secreto ALERT_EMAIL"; exit 1; }
+          terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=hub/dev.tfstate"
+
+      - name: Plan
+        run: terraform plan -no-color -lock-timeout=5m -out=tfplan # queda en el log, para mirarlo
+
+      - name: Apply
+        run: terraform apply -no-color -lock-timeout=5m tfplan # aplica exactamente ese plan
