@@ -21,3 +21,7 @@ output "glue_gleif_bronze_job" {
 output "athena_workgroup" {
   value = aws_athena_workgroup.hub.name
 }
+
+output "glue_gleif_silver_job" {
+  value = aws_glue_job.gleif_silver.name
+}

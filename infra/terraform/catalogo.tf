@@ -39,3 +39,10 @@ resource "aws_athena_workgroup" "hub" {
     }
   }
 }
+
+# Silver: las tablas tipadas, la cuarentena y el registro de archivos procesados.
+resource "aws_glue_catalog_database" "silver" {
+  name         = "refhub_silver_${var.environment}"
+  description  = "Silver del hub: datos tipados y validados, cuarentena con motivo."
+  location_uri = "s3://${aws_s3_bucket.data.bucket}/silver/"
+}
