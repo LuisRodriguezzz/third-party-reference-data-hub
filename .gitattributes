@@ -1,0 +1,4 @@
+# Finales de línea: siempre LF, en el repo y en tu copia de trabajo (como en el runner Linux del CI).
+# Sin esto, git en Windows convierte a CRLF al hacer checkout, y el zip de la Lambda y la huella
+# de los scripts de Glue dan distinto en tu máquina que en el CI.
+* text=auto eol=lf
