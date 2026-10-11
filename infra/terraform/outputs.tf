@@ -13,3 +13,11 @@ output "gleif_state_machine_arn" {
 output "glue_gleif_full_job" {
   value = aws_glue_job.gleif_full.name
 }
+
+output "glue_gleif_bronze_job" {
+  value = aws_glue_job.gleif_bronze.name
+}
+
+output "athena_workgroup" {
+  value = aws_athena_workgroup.hub.name
+}
