@@ -1,5 +1,5 @@
 variable "alert_email" {
-  description = "Mail que recibe las alertas de presupuesto. Va en terraform.tfvars, que NO se sube a git."
+  description = "Mail de las alertas de presupuesto y contacto que exige la SEC. Va en terraform.tfvars, que NO se sube a git."
   type        = string
   sensitive   = true
 }
@@ -19,5 +19,5 @@ variable "environment" {
 variable "refhub_version" {
   description = "Versión de refhub que usan la Lambda y los jobs de Glue. La publica el CI en artifacts/refhub/<versión>/."
   type        = string
-  default     = "0.3.0"
+  default     = "0.4.0"
 }

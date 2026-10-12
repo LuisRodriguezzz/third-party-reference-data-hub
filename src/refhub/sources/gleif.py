@@ -3,7 +3,6 @@
 import csv
 import io
 import json
-import os
 import re
 import urllib.request
 import zipfile
@@ -12,6 +11,7 @@ from collections.abc import Iterable, Iterator
 from datetime import date
 from pathlib import Path
 
+from refhub.landing import upload
 from refhub.lei import lei_problem
 
 PUBLISHES_URL = "https://goldencopy.gleif.org/api/v2/golden-copies/publishes/latest"
@@ -80,39 +80,9 @@ def download(url: str, dest_dir: Path) -> Path:
     return dest
 
 
-def object_exists(s3, bucket: str, key: str) -> bool:
-    """¿Ya está ese objeto en el bucket? HeadObject pide solo los metadatos, no el archivo."""
-    try:
-        s3.head_object(Bucket=bucket, Key=key)
-    except s3.exceptions.ClientError as err:
-        if err.response["Error"]["Code"] == "404":
-            return False
-        raise  # 403 (sin permiso) u otro error: que falle, no seguir a ciegas
-    return True
-
-
 def upload_to_landing(s3, bucket: str, url: str) -> dict[str, str]:
-    """Baja el archivo de GLEIF directo a S3, sin pasar por disco. Si ya estaba, no hace nada."""
-    key = landing_key(url)
-    if object_exists(s3, bucket, key):
-        return {"bucket": bucket, "key": key, "status": "ya_existia"}
-    with urllib.request.urlopen(url, timeout=120) as resp:
-        # upload_fileobj lee la respuesta de a pedazos y la sube. S3 publica el objeto
-        # recién cuando termina: nunca queda un archivo a medias con el nombre final.
-        s3.upload_fileobj(resp, bucket, key)
-    return {"bucket": bucket, "key": key, "status": "subido"}
-
-
-def handler(event, context):
-    """Punto de entrada de la Lambda. Lambda llama a esta función con (event, context)."""
-    # boto3 viene incluido en el runtime de Lambda. Se importa acá adentro para que
-    # los tests y main() funcionen sin tenerlo instalado.
-    import boto3
-
-    bucket = os.environ["DATA_BUCKET"]  # lo define Terraform en la configuración de la Lambda
-    result = upload_to_landing(boto3.client("s3"), bucket, latest_delta_url())
-    print(result)  # queda en CloudWatch Logs
-    return result  # y Step Functions lo muestra como salida del paso
+    """Baja el archivo de GLEIF a landing/gleif/. Si ya estaba, no hace nada."""
+    return upload(s3, bucket, url, landing_key(url))
 
 
 def read_rows(zip_path: Path) -> Iterator[dict[str, str]]:
