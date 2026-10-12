@@ -46,17 +46,28 @@ def test_parse_timestamp_entiende_los_husos():
     assert parse_timestamp("2026-10-01T10:00:00+02:00") < parse_timestamp("2026-10-01T09:00:00Z")
 
 
-def test_latest_per_lei_se_queda_con_la_mas_nueva_en_utc():
-    vieja = {**VALIDA, "last_update": "2026-10-01T10:00:00+02:00", "_archivo": "b.zip"}
+def test_latest_per_lei_gana_el_archivo_mas_nuevo_aunque_su_fecha_sea_mas_vieja():
+    # Caso real (LEI 74370055WK4U9VLVZH47): el 2-oct otra LOU pidió la transferencia; el 10-oct
+    # el LEI volvió a la LOU original con su registro del 28-sep. Vale lo que GLEIF publicó último.
+    pedido = {
+        **VALIDA,
+        "registration_status": "PENDING_TRANSFER",
+        "last_update": "2026-10-02T10:12:08Z",
+        "_archivo": "20261002-1600-gleif-goldencopy-lei2-last-day.csv.zip",
+    }
+    vuelta = {
+        **VALIDA,
+        "registration_status": "ISSUED",
+        "last_update": "2026-09-28T14:39:07+03:00",
+        "_archivo": "20261010-1600-gleif-goldencopy-lei2-golden-copy.csv.zip",
+    }
+    assert latest_per_lei([vuelta, pedido]) == [vuelta]
+
+
+def test_latest_per_lei_en_un_mismo_archivo_gana_la_mas_nueva_en_utc():
+    vieja = {**VALIDA, "last_update": "2026-10-01T10:00:00+02:00", "_archivo": "a.zip"}
     nueva = {**VALIDA, "last_update": "2026-10-01T09:00:00Z", "_archivo": "a.zip"}
     otra = {**VALIDA, "lei": "5493001KJTIIGC8Y1R12", "_archivo": "a.zip"}
     resultado = latest_per_lei([vieja, nueva, otra])
     assert len(resultado) == 2
     assert nueva in resultado  # como texto, "10:00+02:00" parecería más nueva: no lo es
-
-
-def test_latest_per_lei_si_empatan_gana_el_archivo_mas_nuevo():
-    # Dos deltas seguidos traen el mismo registro, idéntico: queda uno solo.
-    del_0800 = {**VALIDA, "_archivo": "20261002-0800-gleif-goldencopy-lei2-last-day.csv.zip"}
-    del_1600 = {**VALIDA, "_archivo": "20261002-1600-gleif-goldencopy-lei2-last-day.csv.zip"}
-    assert latest_per_lei([del_1600, del_0800]) == [del_1600]
