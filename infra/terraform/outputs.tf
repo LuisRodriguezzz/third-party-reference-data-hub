@@ -25,3 +25,7 @@ output "athena_workgroup" {
 output "glue_gleif_silver_job" {
   value = module.glue_gleif_silver.job_name
 }
+
+output "glue_gleif_isin_lei_job" {
+  value = module.glue_gleif_isin_lei.job_name
+}

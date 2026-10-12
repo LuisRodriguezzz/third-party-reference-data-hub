@@ -1,12 +1,14 @@
-"""Contrato de GLEIF para silver: qué tiene que cumplir una fila de bronze para pasar a silver.
+"""Contratos de silver: qué tiene que cumplir una fila de cada fuente para pasar a silver.
 
-Si una fila no cumple, no se tira: va a la tabla de cuarentena con el motivo (y sigue en bronze).
+Si una fila no cumple, no se tira: va a la tabla de cuarentena con el motivo (y el original
+sigue en bronze o en landing).
 """
 
 import re
 from collections.abc import Iterable
 from datetime import datetime
 
+from refhub.isin import isin_problem
 from refhub.lei import lei_problem
 
 # Valores posibles según el formato de GLEIF (LEI-CDF 3.1).
@@ -84,3 +86,17 @@ def latest_per_lei(rows: Iterable[dict[str, str | None]]) -> list[dict[str, str 
         if current is None or key > current[0]:
             best[row["lei"]] = (key, row)
     return [row for _, row in best.values()]
+
+
+def isin_lei_problem(row: dict[str, str | None]) -> str | None:
+    """Contrato de ISIN↔LEI: el ISIN y el LEI con su formato y su dígito verificador.
+
+    Devuelve el primer motivo que encuentra (primero el ISIN), o None si la fila cumple.
+    """
+    problem = isin_problem(row["isin"])
+    if problem is not None:
+        return f"isin_{problem}"
+    problem = lei_problem(row["lei"])
+    if problem is not None:
+        return f"lei_{problem}"
+    return None

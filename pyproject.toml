@@ -1,6 +1,6 @@
 [project]
 name = "refhub"
-version = "0.4.0"
+version = "0.5.0"
 description = "Hub de datos de referencia de terceros: golden copy de empresas e instrumentos (GLEIF, OpenFIGI, SEC EDGAR) con catálogo de datasets y licencias legibles por máquina (DCAT y ODRL)."
 readme = "README.md"
 authors = [
