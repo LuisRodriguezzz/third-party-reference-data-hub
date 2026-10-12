@@ -13,11 +13,7 @@ locals {
   ])
 }
 
-resource "aws_iam_role" "glue_gleif_bronze" {
-  name               = "refhub-glue-gleif-bronze-${var.environment}"
-  assume_role_policy = data.aws_iam_policy_document.glue_assume.json
-}
-
+# Sus permisos: los de glue_base más leer landing, escribir bronze y registrar sus tablas.
 data "aws_iam_policy_document" "glue_gleif_bronze" {
   source_policy_documents = [data.aws_iam_policy_document.glue_base.json]
 
@@ -44,37 +40,37 @@ data "aws_iam_policy_document" "glue_gleif_bronze" {
   }
 }
 
-resource "aws_iam_role_policy" "glue_gleif_bronze" {
-  name   = "permisos-minimos"
-  role   = aws_iam_role.glue_gleif_bronze.id
-  policy = data.aws_iam_policy_document.glue_gleif_bronze.json
-}
+module "glue_gleif_bronze" {
+  source = "./modules/glue_job"
 
-resource "aws_glue_job" "gleif_bronze" {
-  name              = "refhub-gleif-bronze-${var.environment}"
-  role_arn          = aws_iam_role.glue_gleif_bronze.arn
-  glue_version      = "5.1"
-  worker_type       = "G.1X"
-  number_of_workers = 2  # 1 driver + 1 executor de 4 núcleos
-  timeout           = 60 # el archivo completo son ~5 GB de CSV
-  max_retries       = 0
+  nombre          = "gleif-bronze"
+  environment     = var.environment
+  script_location = "${local.artifacts}/glue/gleif_bronze.py"
+  timeout         = 60 # el archivo completo son ~5 GB de CSV
+  permisos_json   = data.aws_iam_policy_document.glue_gleif_bronze.json
 
-  command {
-    name            = "glueetl"
-    python_version  = "3"
-    script_location = "${local.artifacts}/glue/gleif_bronze.py" # el que publicó el CI
-  }
-
-  default_arguments = merge(local.glue_common_args, {
+  argumentos = merge(local.glue_common_args, {
     "--datalake-formats" = "iceberg" # Glue agrega las librerías de Iceberg
     "--conf"             = local.iceberg_conf
     "--DATA_BUCKET"      = aws_s3_bucket.data.bucket
     "--BRONZE_DB"        = aws_glue_catalog_database.bronze.name
   })
 
-  execution_property {
-    max_concurrent_runs = 1 # dos corridas a la vez cargarían el mismo archivo
-  }
-
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
+}
+
+# Mismos recursos, otra dirección (ver glue_gleif_full.tf). Se pueden sacar después del apply.
+moved {
+  from = aws_iam_role.glue_gleif_bronze
+  to   = module.glue_gleif_bronze.aws_iam_role.this
+}
+
+moved {
+  from = aws_iam_role_policy.glue_gleif_bronze
+  to   = module.glue_gleif_bronze.aws_iam_role_policy.this
+}
+
+moved {
+  from = aws_glue_job.gleif_bronze
+  to   = module.glue_gleif_bronze.aws_glue_job.this
 }

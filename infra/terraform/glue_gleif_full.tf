@@ -1,15 +1,8 @@
 # Carga inicial: un job de Glue que baja el archivo completo de GLEIF a landing/ (una vez).
 # El script lo publica el CI en artifacts/refhub/<versión>/glue/, con el .whl.
 
-# ---------------------------------------------------------------- 1. Permisos del job
-
-resource "aws_iam_role" "glue_gleif_full" {
-  name               = "refhub-glue-gleif-full-${var.environment}"
-  assume_role_policy = data.aws_iam_policy_document.glue_assume.json
-}
-
+# Sus permisos: todo lo de glue_base (logs, artefactos, temporales, listar)...
 data "aws_iam_policy_document" "glue_gleif_full" {
-  # Todo lo de glue_base (logs, artefactos, temporales, listar)...
   source_policy_documents = [data.aws_iam_policy_document.glue_base.json]
 
   # ...más escribir en landing/gleif/, igual que la Lambda.
@@ -20,37 +13,36 @@ data "aws_iam_policy_document" "glue_gleif_full" {
   }
 }
 
-resource "aws_iam_role_policy" "glue_gleif_full" {
-  name   = "permisos-minimos"
-  role   = aws_iam_role.glue_gleif_full.id
-  policy = data.aws_iam_policy_document.glue_gleif_full.json
-}
+module "glue_gleif_full" {
+  source = "./modules/glue_job" # el rol, la política y el job, armados igual para todos
 
-# ---------------------------------------------------------------- 2. El job
-
-resource "aws_glue_job" "gleif_full" {
-  name              = "refhub-gleif-full-${var.environment}"
-  role_arn          = aws_iam_role.glue_gleif_full.arn
-  glue_version      = "5.1"  # Python 3.11: el que acepta refhub (>=3.11,<3.13)
-  worker_type       = "G.1X" # 1 DPU por worker: 4 vCPU y 16 GB
-  number_of_workers = 2      # el mínimo para un job de Spark
-  timeout           = 30     # minutos: si se cuelga, Glue lo corta y deja de cobrar
-  max_retries       = 0      # si falla, mirás el log antes de gastar otra corrida
-
-  command {
-    name            = "glueetl" # job de Spark (aunque este script no use Spark)
-    python_version  = "3"
-    script_location = "${local.artifacts}/glue/gleif_full.py" # el que publicó el CI
-  }
+  nombre          = "gleif-full"
+  environment     = var.environment
+  script_location = "${local.artifacts}/glue/gleif_full.py" # el que publicó el CI
+  timeout         = 30                                      # minutos: baja un zip de 480 MB
+  permisos_json   = data.aws_iam_policy_document.glue_gleif_full.json
 
   # merge junta dos mapas: los parámetros comunes más los de este job.
-  default_arguments = merge(local.glue_common_args, {
+  argumentos = merge(local.glue_common_args, {
     "--DATA_BUCKET" = aws_s3_bucket.data.bucket
   })
 
-  execution_property {
-    max_concurrent_runs = 1 # nunca dos corridas a la vez
-  }
-
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
+}
+
+# Los recursos ya existían con otra dirección: "moved" le dice a Terraform que son los mismos
+# (sin esto, borraría los viejos y crearía otros). Se pueden sacar después del apply.
+moved {
+  from = aws_iam_role.glue_gleif_full
+  to   = module.glue_gleif_full.aws_iam_role.this
+}
+
+moved {
+  from = aws_iam_role_policy.glue_gleif_full
+  to   = module.glue_gleif_full.aws_iam_role_policy.this
+}
+
+moved {
+  from = aws_glue_job.gleif_full
+  to   = module.glue_gleif_full.aws_glue_job.this
 }
