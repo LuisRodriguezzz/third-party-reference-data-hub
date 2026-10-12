@@ -1,18 +1,7 @@
 # Carga inicial: un job de Glue que baja el archivo completo de GLEIF a landing/ (una vez).
+# El script lo publica el CI en artifacts/refhub/<versión>/glue/, con el .whl.
 
-# ---------------------------------------------------------------- 1. El script, en S3
-
-# Ya no lo sube Terraform: lo publica el CI en artifacts/refhub/<versión>/glue/, con el .whl.
-# "removed" saca el objeto viejo del state SIN borrarlo de S3 (destroy = false).
-removed {
-  from = aws_s3_object.glue_gleif_full
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-# ---------------------------------------------------------------- 2. Permisos del job
+# ---------------------------------------------------------------- 1. Permisos del job
 
 resource "aws_iam_role" "glue_gleif_full" {
   name               = "refhub-glue-gleif-full-${var.environment}"
@@ -37,7 +26,7 @@ resource "aws_iam_role_policy" "glue_gleif_full" {
   policy = data.aws_iam_policy_document.glue_gleif_full.json
 }
 
-# ---------------------------------------------------------------- 3. El job
+# ---------------------------------------------------------------- 2. El job
 
 resource "aws_glue_job" "gleif_full" {
   name              = "refhub-gleif-full-${var.environment}"
