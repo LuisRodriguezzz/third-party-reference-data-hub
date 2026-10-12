@@ -1,8 +1,11 @@
 # Lo que comparten todos los jobs de Glue del hub: el paquete refhub, los logs y los permisos base.
 
 locals {
+  # Todo lo que publicó el CI para esta versión: el .whl, el zip de la Lambda y glue/*.py.
+  artifacts = "s3://${aws_s3_bucket.data.bucket}/artifacts/refhub/${var.refhub_version}"
+
   # El .whl de refhub en S3. Glue lo instala con pip antes de correr el script.
-  refhub_whl = "s3://${aws_s3_bucket.data.bucket}/artifacts/refhub/${var.refhub_version}/refhub-${var.refhub_version}-py3-none-any.whl"
+  refhub_whl = "${local.artifacts}/refhub-${var.refhub_version}-py3-none-any.whl"
 
   # Con este prefijo, Glue escribe en <prefijo>/output (los print) y <prefijo>/error (Spark).
   glue_log_prefix = "/aws-glue/refhub-${var.environment}"

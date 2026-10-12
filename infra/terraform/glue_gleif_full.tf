@@ -2,13 +2,14 @@
 
 # ---------------------------------------------------------------- 1. El script, en S3
 
-# Glue no lee tu disco: el script tiene que estar en S3. Terraform lo sube y, si lo cambiás,
-# la huella (source_hash) cambia y el próximo plan muestra un ~ para subir la versión nueva.
-resource "aws_s3_object" "glue_gleif_full" {
-  bucket      = aws_s3_bucket.data.id
-  key         = "artifacts/glue/gleif_full.py"
-  source      = "${path.module}/../../glue/gleif_full.py"
-  source_hash = filemd5("${path.module}/../../glue/gleif_full.py")
+# Ya no lo sube Terraform: lo publica el CI en artifacts/refhub/<versión>/glue/, con el .whl.
+# "removed" saca el objeto viejo del state SIN borrarlo de S3 (destroy = false).
+removed {
+  from = aws_s3_object.glue_gleif_full
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 # ---------------------------------------------------------------- 2. Permisos del job
@@ -50,7 +51,7 @@ resource "aws_glue_job" "gleif_full" {
   command {
     name            = "glueetl" # job de Spark (aunque este script no use Spark)
     python_version  = "3"
-    script_location = "s3://${aws_s3_bucket.data.bucket}/${aws_s3_object.glue_gleif_full.key}"
+    script_location = "${local.artifacts}/glue/gleif_full.py" # el que publicó el CI
   }
 
   # merge junta dos mapas: los parámetros comunes más los de este job.

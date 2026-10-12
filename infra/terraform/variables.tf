@@ -17,7 +17,7 @@ variable "environment" {
 }
 
 variable "refhub_version" {
-  description = "Versión del paquete refhub (.whl) que usan los jobs de Glue. Tiene que existir en S3."
+  description = "Versión de refhub que usan la Lambda y los jobs de Glue. La publica el CI en artifacts/refhub/<versión>/."
   type        = string
-  default     = "0.2.0"
+  default     = "0.3.0"
 }

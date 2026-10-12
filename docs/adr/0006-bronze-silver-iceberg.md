@@ -36,6 +36,12 @@ fecha como texto y nada lo frenaría.
   con la última versión de cada clave se ordena por la secuencia de la fuente, no por un campo
   que la fuente no garantiza que crezca (es lo que hacen las herramientas de CDC con su columna
   de secuencia). **Registro de archivos procesados** escrito al final.
+- **El código se publica por versión, desde el CI.** Al mergear, el CI arma el `.whl` una vez y
+  publica en `artifacts/refhub/<versión>/` el `.whl`, el zip de la Lambda (el mismo `.whl`) y
+  los scripts de `glue/`; recién después aplica Terraform, que solo dice qué versión usar
+  (`refhub_version`). Una versión publicada no se pisa (`put-object --if-none-match '*'`).
+  Entra con el rol de apply del ADR 0005. Criterio: armar una vez y desplegar el mismo
+  artefacto en todos lados, con una versión que dice de qué commit salió.
 - **El contrato es interno, no ODCS.** Un contrato de datos en sentido estricto (ODCS) es un
   acuerdo publicado por el productor para sus consumidores, con dueños y SLA. Entre bronze y
   silver alcanza con la mitad técnica: esquema declarado y reglas por fila.
@@ -61,6 +67,9 @@ fecha como texto y nada lo frenaría.
   consumidores; tiene sentido en la **salida** del hub (hitos 6 y 7), no entre capas.
 - **AWS Glue Data Quality, Great Expectations, Deequ:** son para la calidad del lote, no para el
   esquema; quedan como opción para el scorecard del hito 6.
+- **Scripts subidos por Terraform y `.whl` armado a mano** (como estuvo hasta el 4D): el script
+  y el paquete podían quedar de versiones distintas, y lo que corría en AWS no era
+  necesariamente lo que probó el CI.
 - **Gana la fecha de actualización más nueva** (la primera versión de la regla): la fecha la pone
   cada LOU y puede ir para atrás. En la primera corrida en AWS, el LEI `74370055WK4U9VLVZH47`
   venía en el delta del 2-oct como `PENDING_TRANSFER` (otra LOU pidió la transferencia) y en el
@@ -81,6 +90,10 @@ fecha como texto y nada lo frenaría.
   que venía de deltas anteriores.
 - Cambiar la regla de qué versión gana no corrige lo que ya está en silver: hay que reprocesar
   (borrar los archivos del registro y volver a correr el job).
+- Cambiar `src/` o `glue/` sin subir la versión no publica nada: el CI avisa y en AWS sigue
+  corriendo lo anterior. Volver atrás es un PR con la versión anterior.
+- Levantar el hub desde cero exige crear el bucket de datos y publicar el código antes del
+  primer apply completo (pasos en el runbook).
 - Cada corrida de un job cuesta al menos un minuto de 2 DPU; por eso el schedule sigue apagado.
 - Iceberg guarda las versiones viejas de los archivos hasta que se expiran los snapshots.
 - Si GLEIF cambia el formato del CSV, bronze falla a propósito.

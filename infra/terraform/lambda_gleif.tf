@@ -1,20 +1,13 @@
-# Ingesta de GLEIF, parte 1: el código empaquetado, sus logs, sus permisos y la Lambda.
+# Ingesta de GLEIF, parte 1: el código, sus logs, sus permisos y la Lambda.
 
 # Un "local" es un valor con nombre que se calcula una vez y se reusa en este proyecto.
 locals {
   gleif_name = "refhub-gleif-ingest-${var.environment}" # -> refhub-gleif-ingest-dev
 }
 
-# ---------------------------------------------------------------- 1. Empaquetar el código
+# ---------------------------------------------------------------- 1. El código
 
-# Un bloque "data" no crea nada en AWS: este arma un zip en tu disco durante el plan.
-data "archive_file" "refhub" {
-  type             = "zip"
-  source_dir       = "${path.module}/../../src"        # la carpeta src/ del repo: adentro está refhub/
-  output_path      = "${path.module}/build/refhub.zip" # dónde deja el zip (build/ está en .gitignore)
-  excludes         = ["**/__pycache__/**", "**/*.pyc"] # basura de Python que no tiene que viajar
-  output_file_mode = "0644"                            # permisos de lectura que Lambda necesita
-}
+# Ya no se arma acá: lo publica el CI en S3, el mismo build que usa Glue (ver la Lambda abajo).
 
 # ---------------------------------------------------------------- 2. Logs con retención
 
@@ -77,15 +70,15 @@ resource "aws_iam_role_policy" "gleif_lambda" {
 
 resource "aws_lambda_function" "gleif" {
   function_name = local.gleif_name
-  role          = aws_iam_role.gleif_lambda.arn        # con qué permisos corre
-  runtime       = "python3.12"                         # trae Python 3.12 y boto3 incluidos
-  handler       = "refhub.sources.gleif.handler"       # módulo.función que Lambda llama
-  filename      = data.archive_file.refhub.output_path # el zip del paso 1
-  timeout       = 120                                  # segundos; el delta pesa menos de 1 MB
-  memory_size   = 256                                  # MB
+  role          = aws_iam_role.gleif_lambda.arn  # con qué permisos corre
+  runtime       = "python3.12"                   # trae Python 3.12 y boto3 incluidos
+  handler       = "refhub.sources.gleif.handler" # módulo.función que Lambda llama
+  timeout       = 120                            # segundos; el delta pesa menos de 1 MB
+  memory_size   = 256                            # MB
 
-  # Huella del zip: si cambia el código, cambia la huella y Terraform sube el zip nuevo.
-  source_code_hash = data.archive_file.refhub.output_base64sha256
+  # El zip que publicó el CI para esta versión. Versión nueva = otra clave = código nuevo.
+  s3_bucket = aws_s3_bucket.data.bucket
+  s3_key    = "artifacts/refhub/${var.refhub_version}/refhub-lambda.zip"
 
   # Variables de entorno: el código lee el nombre del bucket de acá (os.environ).
   environment {
