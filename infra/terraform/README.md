@@ -155,6 +155,16 @@ Si el schedule estuvo apagado o falló más de un día, faltan publicaciones: ca
 delta `LastWeek` o buscar las publicaciones viejas en
 `https://goldencopy.gleif.org/api/v2/golden-copies/publishes`.
 
+La misma Lambda baja las otras fuentes según el evento: `{"fuente": "gleif_isin_lei"}` (el
+archivo ISIN↔LEI, una foto completa por día) o `{"fuente": "sec"}` (las empresas de la SEC; usa
+`alert_email` como contacto, porque la SEC lo exige). Sin evento, baja el delta de GLEIF. A mano:
+
+```powershell
+'{"fuente": "gleif_isin_lei"}' | Out-File -Encoding ascii evento.json
+aws lambda invoke --function-name refhub-gleif-ingest-dev --payload fileb://evento.json salida.json
+Get-Content salida.json
+```
+
 Logs de la Lambda (se borran a los 14 días):
 
 ```powershell

@@ -69,6 +69,21 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
     }
   }
 
+  # ISIN↔LEI llega como una foto completa por día (33 MB). Silver guarda la última; en landing
+  # alcanza con un mes para poder reprocesar. (Va al final: así el plan muestra solo una regla
+  # nueva, sin "mover" las de arriba.)
+  rule {
+    id     = "borrar-isin-lei-viejos"
+    status = "Enabled"
+
+    filter {
+      prefix = "landing/gleif_isin_lei/"
+    }
+
+    expiration {
+      days = 30
+    }
+  }
 }
 
 resource "aws_budgets_budget" "mensual" {

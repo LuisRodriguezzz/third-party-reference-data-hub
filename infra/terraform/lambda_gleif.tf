@@ -1,4 +1,6 @@
-# Ingesta de GLEIF, parte 1: el código, sus logs, sus permisos y la Lambda.
+# Ingesta, parte 1: la Lambda que baja a landing/ el delta de GLEIF, el archivo ISIN↔LEI y las
+# empresas de la SEC (el evento dice cuál), sus logs y sus permisos. Se sigue llamando
+# refhub-gleif-ingest: cambiarle el nombre borraría y recrearía la función.
 
 # Un "local" es un valor con nombre que se calcula una vez y se reusa en este proyecto.
 locals {
@@ -45,9 +47,13 @@ data "aws_iam_policy_document" "gleif_lambda" {
   }
 
   statement {
-    sid       = "LeerYEscribirLandingGleif"
-    actions   = ["s3:GetObject", "s3:PutObject"]              # HeadObject usa el permiso GetObject
-    resources = ["${aws_s3_bucket.data.arn}/landing/gleif/*"] # solo objetos bajo landing/gleif/
+    sid     = "LeerYEscribirLandingDeSusFuentes"
+    actions = ["s3:GetObject", "s3:PutObject"] # HeadObject usa el permiso GetObject
+    resources = [                              # solo las carpetas de landing de sus fuentes
+      "${aws_s3_bucket.data.arn}/landing/gleif/*",
+      "${aws_s3_bucket.data.arn}/landing/gleif_isin_lei/*",
+      "${aws_s3_bucket.data.arn}/landing/sec/*",
+    ]
   }
 
   statement {
@@ -70,20 +76,21 @@ resource "aws_iam_role_policy" "gleif_lambda" {
 
 resource "aws_lambda_function" "gleif" {
   function_name = local.gleif_name
-  role          = aws_iam_role.gleif_lambda.arn  # con qué permisos corre
-  runtime       = "python3.12"                   # trae Python 3.12 y boto3 incluidos
-  handler       = "refhub.sources.gleif.handler" # módulo.función que Lambda llama
-  timeout       = 120                            # segundos; el delta pesa menos de 1 MB
-  memory_size   = 256                            # MB
+  role          = aws_iam_role.gleif_lambda.arn # con qué permisos corre
+  runtime       = "python3.12"                  # trae Python 3.12 y boto3 incluidos
+  handler       = "refhub.ingesta.handler"      # módulo.función que Lambda llama
+  timeout       = 120                           # segundos; el archivo más grande (ISIN↔LEI) son 33 MB
+  memory_size   = 256                           # MB: el archivo pasa de a pedazos, no entero
 
   # El zip que publicó el CI para esta versión. Versión nueva = otra clave = código nuevo.
   s3_bucket = aws_s3_bucket.data.bucket
   s3_key    = "artifacts/refhub/${var.refhub_version}/refhub-lambda.zip"
 
-  # Variables de entorno: el código lee el nombre del bucket de acá (os.environ).
+  # Variables de entorno: el código las lee con os.environ.
   environment {
     variables = {
       DATA_BUCKET = aws_s3_bucket.data.bucket
+      SEC_CONTACT = var.alert_email # la SEC exige un mail de contacto en cada pedido
     }
   }
 
