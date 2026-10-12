@@ -20,6 +20,7 @@ from pyspark.sql.types import StringType
 
 from refhub.bronze import column_name
 from refhub.contract import row_problem
+from refhub.names import normalize_name
 from refhub.sources.gleif import COLUMNS
 
 args = getResolvedOptions(sys.argv, ["BRONZE_DB", "SILVER_DB"])
@@ -31,6 +32,7 @@ processed = f"{silver_db}.gleif_archivos_procesados"
 
 spark = SparkSession.builder.getOrCreate()
 print(f"refhub {version('refhub')}")  # qué versión del paquete instaló Glue
+normalize = F.udf(normalize_name, StringType())  # la misma función que probás con pytest
 
 
 def create_tables():
@@ -77,6 +79,7 @@ def process(pending):
     valid = batch.where(F.col("motivo").isNull()).select(
         "lei",
         "legal_name",
+        normalize("legal_name").alias("nombre_normalizado"),  # para cruzar con la SEC
         "country",
         "entity_status",
         "registration_status",
@@ -133,6 +136,28 @@ def process(pending):
         print(f"{row['archivo']}: {row['filas']} filas, {row['rechazadas']} a cuarentena")
 
 
+def fill_missing_names():
+    """Las filas cargadas antes de que existiera nombre_normalizado (hito 5C) lo tienen vacío.
+
+    Se completan una sola vez, con un MERGE que solo toca esa columna. Después ya no queda
+    ninguna vacía y no se escribe nada. Cuando haya corrido, se puede sacar en un PR de
+    limpieza.
+    """
+    missing = spark.table(silver).where(F.col("nombre_normalizado").isNull())
+    if missing.limit(1).count() == 0:
+        return
+    missing.select(
+        "lei", normalize("legal_name").alias("nombre_normalizado")
+    ).createOrReplaceTempView("nombres")
+    spark.sql(f"""
+        MERGE INTO {silver} AS t
+        USING nombres AS s
+        ON t.lei = s.lei
+        WHEN MATCHED THEN UPDATE SET t.nombre_normalizado = s.nombre_normalizado
+    """)
+    print("nombre_normalizado completado en las filas que lo tenían vacío")
+
+
 # 0. Las tablas, con su DDL (no con lo que traiga el primer DataFrame).
 create_tables()
 
@@ -146,3 +171,6 @@ if pending:
     process(pending)
 else:
     print("Nada nuevo en bronze: no se escribe nada")
+
+# 9. Una sola vez, después de la migración del 5C: completar la columna nueva.
+fill_missing_names()

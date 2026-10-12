@@ -97,3 +97,28 @@ fecha como texto y nada lo frenaría.
 - Cada corrida de un job cuesta al menos un minuto de 2 DPU; por eso el schedule sigue apagado.
 - Iceberg guarda las versiones viejas de los archivos hasta que se expiran los snapshots.
 - Si GLEIF cambia el formato del CSV, bronze falla a propósito.
+
+## Revisión en el hito 5C: la tercera tabla de silver
+
+Con `sec_empresas` ya hay tres tablas en silver. Se revisó si conviene pasar a YAML + motor
+genérico, como estaba previsto:
+
+| Tabla | Entrada | Cómo se escribe | Reglas |
+|---|---|---|---|
+| `gleif_lei` | deltas que se solapan, vía bronze | `MERGE` con la regla de qué versión gana | dígito verificador del LEI (MOD 97), estados, fechas |
+| `gleif_isin_lei` | CSV dentro de un zip, 9,3 M de filas | reemplazo total (foto completa) | dígito verificador del ISIN (Luhn) y del LEI |
+| `sec_empresas` | JSON compacto, 10 mil filas | reemplazo total (foto completa) | CIK, nombre, ticker; una fila por ticker |
+
+- **No comparten el patrón.** Hay tres formatos de entrada y dos formas de escribir, y las reglas
+  que importan (los dígitos verificadores, el nombre normalizado) son código: no se escriben en
+  YAML. Un motor genérico necesitaría un caso especial para cada tabla.
+- **Lo que se repite es poco:** crear las tablas desde su DDL, buscar el último archivo de
+  landing y escribir la cuarentena. Son pocas líneas por job, y duplicadas se leen mejor que
+  detrás de una abstracción.
+- **Decisión:** se sigue con DDL en SQL + reglas en Python. Los dos jobs de foto completa
+  (ISIN↔LEI y SEC) quedan duplicados a propósito; si llega una tercera foto completa con el
+  mismo patrón, se evalúa una función común en `refhub`.
+- **Migraciones:** el primer cambio a una tabla con datos (`nombre_normalizado` en `gleif_lei`)
+  va como `migraciones/0001_*.sql`, numerado y en el repo, y se corre una vez en Athena antes de
+  correr el job. Criterio: migraciones versionadas, como en Flyway o Liquibase, pero sin la
+  herramienta: con un cambio cada tanto no se justifica sumarla.

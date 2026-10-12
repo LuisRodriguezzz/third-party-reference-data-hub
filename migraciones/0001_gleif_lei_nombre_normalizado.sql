@@ -1,0 +1,12 @@
+-- Migración 0001 (hito 5C): agrega nombre_normalizado a silver.gleif_lei.
+--
+-- Se corre UNA vez, a mano, en Athena (workgroup refhub-dev), después de mergear el PR que la
+-- trae y antes de correr el job refhub-gleif-silver-dev. Después, el job completa la columna en
+-- las filas que ya estaban (fill_missing_names) y la calcula en las nuevas.
+--
+-- Iceberg agrega la columna sin reescribir los datos: solo cambian los metadatos. Las filas que
+-- ya estaban la leen vacía (NULL) hasta que corre el job.
+--
+-- Athena no documenta COMMENT en ADD COLUMNS para Iceberg: la descripción de la columna queda en
+-- src/refhub/ddl/silver_gleif_lei.sql.
+ALTER TABLE refhub_silver_dev.gleif_lei ADD COLUMNS (nombre_normalizado string)

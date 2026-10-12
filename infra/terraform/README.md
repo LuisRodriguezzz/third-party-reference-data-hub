@@ -173,12 +173,18 @@ aws logs tail /aws/lambda/refhub-gleif-ingest-dev --since 1h
 
 ## Bronze y silver
 
-Tres jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 días):
+Cinco jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 días):
 
 - `refhub-gleif-full-dev`: baja el archivo completo de GLEIF a `landing/` (carga inicial, a mano).
 - `refhub-gleif-bronze-dev`: carga en `refhub_bronze_dev.gleif_lei` los zips de `landing/` que
   falten.
-- `refhub-gleif-silver-dev`: contrato, cuarentena y `MERGE` en `refhub_silver_dev`.
+- `refhub-gleif-silver-dev`: contrato, cuarentena y `MERGE` en `refhub_silver_dev.gleif_lei`.
+- `refhub-gleif-isin-lei-dev`: el último archivo ISIN↔LEI de `landing/` reemplaza
+  `refhub_silver_dev.gleif_isin_lei` (foto completa, sin bronze).
+- `refhub-sec-dev`: el último archivo de la SEC de `landing/` reemplaza
+  `refhub_silver_dev.sec_empresas` (foto completa, sin bronze).
+
+Los dos últimos no hacen nada si el archivo más nuevo ya está en silver.
 
 Cada job se arma con el módulo `modules/glue_job` (su rol, su política y el job, con la
 configuración que comparten todos). Un job nuevo es un bloque `module` con su nombre, su script,
@@ -196,9 +202,17 @@ Reprocesar un archivo en silver (por ejemplo, después de cambiar una regla): bo
 `refhub_silver_dev.gleif_archivos_procesados` en Athena y correr el job de silver. Lo vuelve a
 procesar entero sin duplicar.
 
+## Migraciones
+
+Cambiar una tabla que ya tiene datos (por ejemplo, agregarle una columna) no lo hace el job:
+`CREATE TABLE IF NOT EXISTS` no toca una tabla que existe. El cambio va como un archivo numerado
+en `../../migraciones/`, en el mismo PR que el código que lo usa. Después de mergear, y antes de
+correr el job, se corre una vez en Athena (workgroup `refhub-dev`), en orden. Cada archivo dice
+qué hace y qué hay que correr después.
+
 ## Versiones del código
 
-La Lambda y los tres jobs usan el código de `artifacts/refhub/<versión>/` del bucket de datos: el
+La Lambda y los jobs usan el código de `artifacts/refhub/<versión>/` del bucket de datos: el
 `.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre) y `glue/*.py`. Lo publica el CI al
 mergear, antes del apply, y **no pisa una versión ya publicada**.
 

@@ -29,3 +29,7 @@ output "glue_gleif_silver_job" {
 output "glue_gleif_isin_lei_job" {
   value = module.glue_gleif_isin_lei.job_name
 }
+
+output "glue_sec_job" {
+  value = module.glue_sec.job_name
+}
