@@ -1,4 +1,4 @@
-# Ingesta de GLEIF, parte 2: Step Functions que llama a la Lambda y un schedule APAGADO.
+# Ingesta de GLEIF, parte 2: Step Functions (Lambda → bronze → silver) y un schedule APAGADO.
 
 # ---------------------------------------------------------------- 1. Step Functions
 
@@ -18,7 +18,7 @@ resource "aws_iam_role" "gleif_sfn" {
   assume_role_policy = data.aws_iam_policy_document.sfn_assume.json
 }
 
-# QUÉ: invocar ESTA Lambda y ninguna otra.
+# QUÉ: invocar ESTA Lambda y correr ESTOS dos jobs de Glue, y nada más.
 data "aws_iam_policy_document" "gleif_sfn" {
   statement {
     actions = ["lambda:InvokeFunction"]
@@ -27,10 +27,15 @@ data "aws_iam_policy_document" "gleif_sfn" {
       "${aws_lambda_function.gleif.arn}:*", # también sus versiones, si algún día se publican
     ]
   }
+  statement {
+    # Arrancar el job, preguntar cómo va (para esperar a que termine) y frenarlo si se cancela.
+    actions   = ["glue:StartJobRun", "glue:GetJobRun", "glue:GetJobRuns", "glue:BatchStopJobRun"]
+    resources = [aws_glue_job.gleif_bronze.arn, aws_glue_job.gleif_silver.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "gleif_sfn" {
-  name   = "invocar-lambda-gleif"
+  name   = "invocar-lambda-gleif" # no cambiar: un nombre nuevo borra y recrea la política
   role   = aws_iam_role.gleif_sfn.id
   policy = data.aws_iam_policy_document.gleif_sfn.json
 }
@@ -42,8 +47,8 @@ resource "aws_sfn_state_machine" "gleif" {
 
   # La definición es un JSON (Amazon States Language). jsonencode lo arma desde HCL.
   definition = jsonencode({
-    Comment = "Baja el delta diario de GLEIF a landing/"
-    StartAt = "BajarDeltaGleif" # el primer (y por ahora único) paso
+    Comment = "Baja el delta diario de GLEIF a landing/ y lo carga en bronze y silver"
+    StartAt = "BajarDeltaGleif" # el primer paso
     States = {
       BajarDeltaGleif = {
         Type     = "Task"                           # un paso que hace un trabajo
@@ -76,7 +81,36 @@ resource "aws_sfn_state_machine" "gleif" {
             BackoffRate     = 2
           },
         ]
-        End = true # después de este paso, la ejecución termina
+        Next = "CargarBronze" # después de bajar, cargar
+      }
+      CargarBronze = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::glue:startJobRun.sync" # .sync: espera a que el job termine
+        Parameters = {
+          JobName = aws_glue_job.gleif_bronze.name
+        }
+        ResultSelector = {
+          "estado.$"   = "$.JobRunState"   # de la respuesta de Glue, solo el estado...
+          "segundos.$" = "$.ExecutionTime" # ...y cuánto tardó
+        }
+        ResultPath     = "$.bronze" # se agrega a la entrada, sin pisar lo que devolvió la Lambda
+        TimeoutSeconds = 3600
+        # Sin Retry: reintentar un job de Glue cuesta. Si falla, mirás el log y lo corrés a mano.
+        Next = "CargarSilver"
+      }
+      CargarSilver = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::glue:startJobRun.sync"
+        Parameters = {
+          JobName = aws_glue_job.gleif_silver.name
+        }
+        ResultSelector = {
+          "estado.$"   = "$.JobRunState"
+          "segundos.$" = "$.ExecutionTime"
+        }
+        ResultPath     = "$.silver"
+        TimeoutSeconds = 3600
+        End            = true # después de silver, la ejecución termina
       }
     }
   })
