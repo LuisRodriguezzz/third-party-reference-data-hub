@@ -68,12 +68,18 @@ def row_problem(row: dict[str, str | None]) -> str | None:
 
 
 def latest_per_lei(rows: Iterable[dict[str, str | None]]) -> list[dict[str, str | None]]:
-    """Una fila por LEI: la de fecha de actualización más nueva; si empatan, la del archivo
-    más nuevo. Es la regla que el job de silver aplica con una ventana de Spark.
+    """Una fila por LEI: la del archivo más nuevo; dentro de un mismo archivo, la de fecha de
+    actualización más nueva. Es la regla que el job de silver aplica con una ventana de Spark
+    y con el MERGE.
+
+    Gana lo que GLEIF publicó último (el nombre del archivo empieza con la fecha y hora de
+    publicación), no la fecha de actualización más alta: esa fecha la pone cada LOU y puede ir
+    para atrás. Si una transferencia entre LOUs no se concreta, el LEI vuelve con el registro
+    de la LOU original, que tiene una fecha más vieja que la del pedido de transferencia.
     """
-    best: dict[str, tuple[tuple[datetime, str], dict[str, str | None]]] = {}
+    best: dict[str, tuple[tuple[str, datetime], dict[str, str | None]]] = {}
     for row in rows:
-        key = (parse_timestamp(row["last_update"]), row["_archivo"])
+        key = (row["_archivo"], parse_timestamp(row["last_update"]))
         current = best.get(row["lei"])
         if current is None or key > current[0]:
             best[row["lei"]] = (key, row)

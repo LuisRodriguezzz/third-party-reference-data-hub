@@ -95,9 +95,11 @@ def process(pending):
     if valid.where(lost_date).limit(1).count() > 0:
         raise ValueError("Hay fechas que el contrato aceptó y Spark no pudo convertir")
 
-    # 6. Una fila por LEI: la más nueva por fecha de actualización (y si empatan, el archivo
-    #    más nuevo). Los deltas se solapan, así que el mismo LEI puede venir varias veces.
-    newest_first = Window.partitionBy("lei").orderBy(F.desc("last_update"), F.desc("_archivo"))
+    # 6. Una fila por LEI: la del archivo más nuevo (y dentro de un archivo, la de fecha de
+    #    actualización más nueva). Los deltas se solapan, así que el mismo LEI puede venir
+    #    varias veces. Gana lo que GLEIF publicó último y no la fecha más alta, porque la fecha
+    #    puede ir para atrás (ver refhub.contract.latest_per_lei).
+    newest_first = Window.partitionBy("lei").orderBy(F.desc("_archivo"), F.desc("last_update"))
     latest = (
         valid.drop("_next_renewal_texto")
         .withColumn("_n", F.row_number().over(newest_first))
@@ -115,8 +117,8 @@ def process(pending):
         USING latest AS s
         ON t.lei = s.lei
         WHEN MATCHED AND (
-            s.last_update > t.last_update
-            OR (s.last_update = t.last_update AND s._archivo > t._archivo)
+            s._archivo > t._archivo
+            OR (s._archivo = t._archivo AND s.last_update > t.last_update)
         ) THEN UPDATE SET *
         WHEN NOT MATCHED THEN INSERT *
     """)

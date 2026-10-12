@@ -30,8 +30,12 @@ fecha como texto y nada lo frenaría.
 - **Criterio para dónde declarar un esquema:** en el formato nativo de la herramienta que crea
   la tabla. Tablas creadas por Spark/Iceberg → DDL en SQL. Modelos de dbt (hito 5) → el YAML de
   dbt con `contract: enforced`. Un acuerdo con otro equipo → ODCS.
-- **Silver:** una fila por LEI, la de actualización más nueva (fechas en UTC, no como texto),
-  con `MERGE`. **Registro de archivos procesados** escrito al final.
+- **Silver:** una fila por LEI, con `MERGE`. **Gana lo que GLEIF publicó último**: la fila del
+  archivo más nuevo (el nombre empieza con la fecha y hora de publicación); dentro de un mismo
+  archivo, la de actualización más nueva (fechas en UTC, no como texto). Criterio: para quedarse
+  con la última versión de cada clave se ordena por la secuencia de la fuente, no por un campo
+  que la fuente no garantiza que crezca (es lo que hacen las herramientas de CDC con su columna
+  de secuencia). **Registro de archivos procesados** escrito al final.
 - **El contrato es interno, no ODCS.** Un contrato de datos en sentido estricto (ODCS) es un
   acuerdo publicado por el productor para sus consumidores, con dueños y SLA. Entre bronze y
   silver alcanza con la mitad técnica: esquema declarado y reglas por fila.
@@ -57,6 +61,12 @@ fecha como texto y nada lo frenaría.
   consumidores; tiene sentido en la **salida** del hub (hitos 6 y 7), no entre capas.
 - **AWS Glue Data Quality, Great Expectations, Deequ:** son para la calidad del lote, no para el
   esquema; quedan como opción para el scorecard del hito 6.
+- **Gana la fecha de actualización más nueva** (la primera versión de la regla): la fecha la pone
+  cada LOU y puede ir para atrás. En la primera corrida en AWS, el LEI `74370055WK4U9VLVZH47`
+  venía en el delta del 2-oct como `PENDING_TRANSFER` (otra LOU pidió la transferencia) y en el
+  completo del 10-oct como `ISSUED`, de vuelta en la LOU original con su registro del 28-sep.
+  Ganó el delta, y silver quedó con una versión que GLEIF ya no publicaba. Con esa regla, ni
+  siquiera un completo nuevo la corrige.
 
 ## Consecuencias
 
@@ -67,6 +77,10 @@ fecha como texto y nada lo frenaría.
 - Cambiar el esquema de una tabla que ya tiene datos es una migración aparte (`ALTER TABLE`).
   `CREATE TABLE IF NOT EXISTS` no toca una tabla existente: si el DDL cambió y no se migró, la
   escritura falla porque las columnas no coinciden.
+- Un completo nuevo de GLEIF realinea silver con la fuente: lo que publica el completo pisa lo
+  que venía de deltas anteriores.
+- Cambiar la regla de qué versión gana no corrige lo que ya está en silver: hay que reprocesar
+  (borrar los archivos del registro y volver a correr el job).
 - Cada corrida de un job cuesta al menos un minuto de 2 DPU; por eso el schedule sigue apagado.
 - Iceberg guarda las versiones viejas de los archivos hasta que se expiran los snapshots.
 - Si GLEIF cambia el formato del CSV, bronze falla a propósito.
