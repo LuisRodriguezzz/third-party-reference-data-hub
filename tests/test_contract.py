@@ -2,7 +2,7 @@
 
 import pytest
 
-from refhub.contract import latest_per_lei, parse_timestamp, row_problem
+from refhub.contract import isin_lei_problem, latest_per_lei, parse_timestamp, row_problem
 
 VALIDA = {
     "lei": "HWUPKR0MPOU8FGXBT394",
@@ -71,3 +71,19 @@ def test_latest_per_lei_en_un_mismo_archivo_gana_la_mas_nueva_en_utc():
     resultado = latest_per_lei([vieja, nueva, otra])
     assert len(resultado) == 2
     assert nueva in resultado  # como texto, "10:00+02:00" parecería más nueva: no lo es
+
+
+def test_isin_lei_valido():
+    assert isin_lei_problem({"isin": "US0378331005", "lei": "HWUPKR0MPOU8FGXBT394"}) is None
+
+
+@pytest.mark.parametrize(
+    ("isin", "lei", "motivo"),
+    [
+        ("US0378331006", "HWUPKR0MPOU8FGXBT394", "isin_digito_verificador"),
+        ("US0378331005", "HWUPKR0MPOU8FGXBT395", "lei_digito_verificador"),
+        ("US0378331006", "HWUPKR0MPOU8FGXBT395", "isin_digito_verificador"),  # primero el ISIN
+    ],
+)
+def test_isin_lei_da_el_primer_motivo(isin, lei, motivo):
+    assert isin_lei_problem({"isin": isin, "lei": lei}) == motivo

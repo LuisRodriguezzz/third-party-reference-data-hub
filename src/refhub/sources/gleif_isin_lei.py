@@ -16,14 +16,18 @@ LATEST_URL = "https://mapping.gleif.org/api/v2/isin-lei/latest"
 _FILE_NAME = re.compile(r"isin-lei-(\d{4})(\d{2})(\d{2})T\d{6}\.zip")
 
 
-def landing_key(file_name: str) -> str:
-    """Dónde se guarda: landing/gleif_isin_lei/dt=<fecha de publicación>/<nombre original>."""
+def publish_date(file_name: str) -> date:
+    """Fecha de publicación que GLEIF pone en el nombre del archivo."""
     match = _FILE_NAME.fullmatch(file_name)
     if match is None:
         # Si GLEIF cambia el formato del nombre, mejor fallar que inventar una fecha.
         raise ValueError(f"No encuentro la fecha de publicación en {file_name!r}")
-    published = date(*(int(part) for part in match.groups()))
-    return f"landing/gleif_isin_lei/dt={published.isoformat()}/{file_name}"
+    return date(*(int(part) for part in match.groups()))
+
+
+def landing_key(file_name: str) -> str:
+    """Dónde se guarda: landing/gleif_isin_lei/dt=<fecha de publicación>/<nombre original>."""
+    return f"landing/gleif_isin_lei/dt={publish_date(file_name).isoformat()}/{file_name}"
 
 
 def latest_file() -> tuple[str, str]:
