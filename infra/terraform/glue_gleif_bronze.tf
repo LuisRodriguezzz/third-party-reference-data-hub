@@ -13,15 +13,6 @@ locals {
   ])
 }
 
-# El script lo publica el CI con el .whl; Terraform olvida el objeto viejo sin borrarlo.
-removed {
-  from = aws_s3_object.glue_gleif_bronze
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 resource "aws_iam_role" "glue_gleif_bronze" {
   name               = "refhub-glue-gleif-bronze-${var.environment}"
   assume_role_policy = data.aws_iam_policy_document.glue_assume.json

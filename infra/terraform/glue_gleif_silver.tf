@@ -1,15 +1,6 @@
 # Silver: un job de Glue que aplica el contrato a bronze, manda lo que falla a cuarentena y
 # deja en silver la última versión de cada LEI.
 
-# El script lo publica el CI con el .whl; Terraform olvida el objeto viejo sin borrarlo.
-removed {
-  from = aws_s3_object.glue_gleif_silver
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 resource "aws_iam_role" "glue_gleif_silver" {
   name               = "refhub-glue-gleif-silver-${var.environment}"
   assume_role_policy = data.aws_iam_policy_document.glue_assume.json
