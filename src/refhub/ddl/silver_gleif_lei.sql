@@ -10,7 +10,10 @@ CREATE TABLE IF NOT EXISTS {db}.gleif_lei (
   last_update         timestamp NOT NULL COMMENT 'Última actualización del registro en GLEIF (UTC)',
   next_renewal        timestamp          COMMENT 'Próxima renovación (UTC); vacía si no hay',
   _archivo            string    NOT NULL COMMENT 'Linaje: archivo de GLEIF del que salió la fila',
-  _fecha_publicacion  date      NOT NULL COMMENT 'Linaje: fecha en que GLEIF publicó ese archivo'
+  _fecha_publicacion  date      NOT NULL COMMENT 'Linaje: fecha en que GLEIF publicó ese archivo',
+  -- Al final y sin NOT NULL porque se agregó a una tabla con datos (migraciones/0001): Iceberg
+  -- no deja agregar una columna obligatoria. El job la llena siempre.
+  nombre_normalizado  string             COMMENT 'legal_name normalizado (refhub.names.normalize_name), para cruzar con la SEC'
 )
 USING iceberg
 TBLPROPERTIES ('format-version' = '2')

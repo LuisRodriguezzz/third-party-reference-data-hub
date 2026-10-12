@@ -2,7 +2,13 @@
 
 import pytest
 
-from refhub.contract import isin_lei_problem, latest_per_lei, parse_timestamp, row_problem
+from refhub.contract import (
+    isin_lei_problem,
+    latest_per_lei,
+    parse_timestamp,
+    row_problem,
+    sec_problem,
+)
 
 VALIDA = {
     "lei": "HWUPKR0MPOU8FGXBT394",
@@ -87,3 +93,35 @@ def test_isin_lei_valido():
 )
 def test_isin_lei_da_el_primer_motivo(isin, lei, motivo):
     assert isin_lei_problem({"isin": isin, "lei": lei}) == motivo
+
+
+SEC = {"cik": "320193", "name": "Apple Inc.", "ticker": "AAPL", "exchange": "Nasdaq"}
+
+
+@pytest.mark.parametrize(
+    "cambio",
+    [
+        {},
+        {"exchange": None},  # la SEC no siempre informa la bolsa
+        {"exchange": "TXSE"},  # una bolsa nueva no es un error
+        {"ticker": "BRK-B"},
+    ],
+)
+def test_sec_validas(cambio):
+    assert sec_problem({**SEC, **cambio}) is None
+
+
+@pytest.mark.parametrize(
+    ("campo", "valor", "motivo"),
+    [
+        ("cik", None, "cik_invalido"),
+        ("cik", "0", "cik_invalido"),
+        ("cik", "320193.0", "cik_invalido"),  # vino como decimal
+        ("cik", "12345678901", "cik_invalido"),  # más de 10 dígitos
+        ("name", " ", "nombre_vacio"),
+        ("ticker", "", "ticker_invalido"),
+        ("ticker", "aapl", "ticker_invalido"),
+    ],
+)
+def test_sec_invalidas(campo, valor, motivo):
+    assert sec_problem({**SEC, campo: valor}) == motivo

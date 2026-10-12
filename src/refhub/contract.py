@@ -29,6 +29,8 @@ REGISTRATION_STATUSES = frozenset(
     }
 )
 _COUNTRY = re.compile(r"[A-Z]{2}")  # código ISO 3166 de dos letras
+_CIK = re.compile(r"[0-9]{1,10}")  # el CIK de la SEC: un número de hasta 10 dígitos
+_TICKER = re.compile(r"[A-Z0-9][A-Z0-9.\-]*")  # AAPL, BRK-B
 
 
 def parse_timestamp(value: str | None) -> datetime | None:
@@ -99,4 +101,22 @@ def isin_lei_problem(row: dict[str, str | None]) -> str | None:
     problem = lei_problem(row["lei"])
     if problem is not None:
         return f"lei_{problem}"
+    return None
+
+
+def sec_problem(row: dict[str, str | None]) -> str | None:
+    """Contrato de la SEC: CIK, nombre y ticker. Devuelve el primer motivo, o None si cumple.
+
+    La bolsa no se valida: la SEC la deja vacía en algunos tickers (176 de 10.435 en el archivo
+    del 7-oct) y no conviene una lista cerrada de bolsas: en ese mismo archivo ya aparece TXSE
+    (la bolsa de Texas), y una lista la habría mandado a cuarentena sin que la fila tuviera
+    nada malo.
+    """
+    cik = row["cik"] or ""
+    if not _CIK.fullmatch(cik) or int(cik) == 0:
+        return "cik_invalido"
+    if not (row["name"] or "").strip():
+        return "nombre_vacio"
+    if not _TICKER.fullmatch(row["ticker"] or ""):
+        return "ticker_invalido"
     return None
