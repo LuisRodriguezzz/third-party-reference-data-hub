@@ -35,17 +35,6 @@ resource "aws_cloudwatch_log_group" "glue_error" {
 
 # ---------------------------------------------------------------- 2. Permisos base
 
-# QUIÉN puede usar los roles de los jobs: solo el servicio Glue.
-data "aws_iam_policy_document" "glue_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["glue.amazonaws.com"]
-    }
-  }
-}
-
 # QUÉ necesita cualquier job del hub. Cada job "hereda" esto y le suma lo suyo.
 data "aws_iam_policy_document" "glue_base" {
   statement {

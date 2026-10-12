@@ -180,6 +180,10 @@ Tres jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 día
   falten.
 - `refhub-gleif-silver-dev`: contrato, cuarentena y `MERGE` en `refhub_silver_dev`.
 
+Cada job se arma con el módulo `modules/glue_job` (su rol, su política y el job, con la
+configuración que comparten todos). Un job nuevo es un bloque `module` con su nombre, su script,
+sus parámetros y sus permisos propios.
+
 Correr un job suelto:
 
 ```powershell

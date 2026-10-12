@@ -11,11 +11,11 @@ output "gleif_state_machine_arn" {
 }
 
 output "glue_gleif_full_job" {
-  value = aws_glue_job.gleif_full.name
+  value = module.glue_gleif_full.job_name
 }
 
 output "glue_gleif_bronze_job" {
-  value = aws_glue_job.gleif_bronze.name
+  value = module.glue_gleif_bronze.job_name
 }
 
 output "athena_workgroup" {
@@ -23,5 +23,5 @@ output "athena_workgroup" {
 }
 
 output "glue_gleif_silver_job" {
-  value = aws_glue_job.gleif_silver.name
+  value = module.glue_gleif_silver.job_name
 }

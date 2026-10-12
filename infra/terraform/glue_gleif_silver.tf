@@ -1,11 +1,7 @@
 # Silver: un job de Glue que aplica el contrato a bronze, manda lo que falla a cuarentena y
 # deja en silver la última versión de cada LEI.
 
-resource "aws_iam_role" "glue_gleif_silver" {
-  name               = "refhub-glue-gleif-silver-${var.environment}"
-  assume_role_policy = data.aws_iam_policy_document.glue_assume.json
-}
-
+# Sus permisos: los de glue_base más leer bronze y escribir silver (archivos y catálogo).
 data "aws_iam_policy_document" "glue_gleif_silver" {
   source_policy_documents = [data.aws_iam_policy_document.glue_base.json]
 
@@ -42,37 +38,37 @@ data "aws_iam_policy_document" "glue_gleif_silver" {
   }
 }
 
-resource "aws_iam_role_policy" "glue_gleif_silver" {
-  name   = "permisos-minimos"
-  role   = aws_iam_role.glue_gleif_silver.id
-  policy = data.aws_iam_policy_document.glue_gleif_silver.json
-}
+module "glue_gleif_silver" {
+  source = "./modules/glue_job"
 
-resource "aws_glue_job" "gleif_silver" {
-  name              = "refhub-gleif-silver-${var.environment}"
-  role_arn          = aws_iam_role.glue_gleif_silver.arn
-  glue_version      = "5.1"
-  worker_type       = "G.1X"
-  number_of_workers = 2
-  timeout           = 60
-  max_retries       = 0
+  nombre          = "gleif-silver"
+  environment     = var.environment
+  script_location = "${local.artifacts}/glue/gleif_silver.py"
+  timeout         = 60
+  permisos_json   = data.aws_iam_policy_document.glue_gleif_silver.json
 
-  command {
-    name            = "glueetl"
-    python_version  = "3"
-    script_location = "${local.artifacts}/glue/gleif_silver.py" # el que publicó el CI
-  }
-
-  default_arguments = merge(local.glue_common_args, {
+  argumentos = merge(local.glue_common_args, {
     "--datalake-formats" = "iceberg"
     "--conf"             = local.iceberg_conf
     "--BRONZE_DB"        = aws_glue_catalog_database.bronze.name
     "--SILVER_DB"        = aws_glue_catalog_database.silver.name
   })
 
-  execution_property {
-    max_concurrent_runs = 1
-  }
-
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
+}
+
+# Mismos recursos, otra dirección (ver glue_gleif_full.tf). Se pueden sacar después del apply.
+moved {
+  from = aws_iam_role.glue_gleif_silver
+  to   = module.glue_gleif_silver.aws_iam_role.this
+}
+
+moved {
+  from = aws_iam_role_policy.glue_gleif_silver
+  to   = module.glue_gleif_silver.aws_iam_role_policy.this
+}
+
+moved {
+  from = aws_glue_job.gleif_silver
+  to   = module.glue_gleif_silver.aws_glue_job.this
 }

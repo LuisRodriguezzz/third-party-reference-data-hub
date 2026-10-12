@@ -30,7 +30,7 @@ data "aws_iam_policy_document" "gleif_sfn" {
   statement {
     # Arrancar el job, preguntar cómo va (para esperar a que termine) y frenarlo si se cancela.
     actions   = ["glue:StartJobRun", "glue:GetJobRun", "glue:GetJobRuns", "glue:BatchStopJobRun"]
-    resources = [aws_glue_job.gleif_bronze.arn, aws_glue_job.gleif_silver.arn]
+    resources = [module.glue_gleif_bronze.job_arn, module.glue_gleif_silver.job_arn]
   }
 }
 
@@ -87,7 +87,7 @@ resource "aws_sfn_state_machine" "gleif" {
         Type     = "Task"
         Resource = "arn:aws:states:::glue:startJobRun.sync" # .sync: espera a que el job termine
         Parameters = {
-          JobName = aws_glue_job.gleif_bronze.name
+          JobName = module.glue_gleif_bronze.job_name
         }
         ResultSelector = {
           "estado.$"   = "$.JobRunState"   # de la respuesta de Glue, solo el estado...
@@ -102,7 +102,7 @@ resource "aws_sfn_state_machine" "gleif" {
         Type     = "Task"
         Resource = "arn:aws:states:::glue:startJobRun.sync"
         Parameters = {
-          JobName = aws_glue_job.gleif_silver.name
+          JobName = module.glue_gleif_silver.job_name
         }
         ResultSelector = {
           "estado.$"   = "$.JobRunState"
