@@ -45,8 +45,12 @@ fecha como texto y nada lo frenaría.
   la primera corrida, y Iceberg no permite pasar después una columna a NOT NULL.
 - **Tabla definida en Terraform** (`aws_glue_catalog_table` de Iceberg): el esquema queda lejos
   del código que escribe y la tabla tendría dos dueños (Terraform y Spark).
-- **YAML propio:** Spark no lee YAML, así que hace falta un motor propio que lo convierta en
-  tablas y chequeos. Es código para mantener sin ganar nada sobre el DDL.
+- **YAML propio + motor genérico:** Spark no lee YAML, así que hace falta un motor propio que lo
+  lea y aplique (casteos, rechazos, deduplicación). Ese motor se paga solo cuando **varias
+  tablas siguen el mismo patrón**: cada tabla nueva es un YAML más. Con una sola tabla y una
+  regla que no entra en YAML (el dígito verificador MOD 97), es código para mantener sin ganar
+  nada. **Se revisa en el hito 5, al llegar la tercera tabla de silver**: si comparten el
+  patrón, se pasa a YAML + motor genérico (los `.sql` se convierten de forma mecánica).
 - **Esquema en código Python con un comparador propio:** se probó y se descartó por la misma
   razón: es un mini-framework con sus propios tests, cuando la tabla ya hace cumplir el esquema.
 - **ODCS para el contrato interno:** es un acuerdo publicado por el productor para sus
