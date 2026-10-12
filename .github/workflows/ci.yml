@@ -122,10 +122,64 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body: cuerpo });
             }
 
+  publicar:
+    # Al mergear: arma el paquete UNA vez y lo publica en S3 con su versión, antes del apply.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: lint-y-tests # solo si ruff y los tests pasaron
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Armar el .whl y el zip de la Lambda
+        run: |
+          uv build --wheel
+          cp dist/refhub-*-py3-none-any.whl dist/refhub-lambda.zip # un .whl ya es un zip con refhub/
+          ls -l dist/
+
+      - name: Entrar a AWS con OIDC (rol de apply)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_APPLY }}
+          aws-region: us-east-1
+
+      - name: Publicar en S3 sin pisar versiones
+        env:
+          BUCKET: ${{ vars.ARTIFACTS_BUCKET }}
+        run: |
+          test -n "$BUCKET" || { echo "::error::Falta la variable ARTIFACTS_BUCKET"; exit 1; }
+          VERSION=$(uv version --short)
+          DESTINO="artifacts/refhub/$VERSION"
+          publicar() { # $1: archivo del repo, $2: clave en S3
+            # --if-none-match '*': S3 solo lo escribe si esa clave no existe (si existe, da 412)
+            if aws s3api put-object --bucket "$BUCKET" --key "$2" --body "$1" \
+                --if-none-match '*' > /dev/null 2> error.txt; then
+              echo "Publicado: s3://$BUCKET/$2"
+            elif grep -q PreconditionFailed error.txt; then
+              echo "::notice::$2 ya existía y no se pisa. Si cambiaste src/ o glue/, subí la versión."
+            else
+              cat error.txt
+              exit 1
+            fi
+          }
+          publicar "dist/refhub-$VERSION-py3-none-any.whl" "$DESTINO/refhub-$VERSION-py3-none-any.whl"
+          publicar dist/refhub-lambda.zip "$DESTINO/refhub-lambda.zip"
+          for SCRIPT in glue/*.py; do
+            publicar "$SCRIPT" "$DESTINO/glue/$(basename "$SCRIPT")"
+          done
+
   terraform-apply:
     # Al mergear (un push a main): aplica en AWS. Es el único lugar donde se aplica el hub.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: lint-y-tests # si ruff o los tests fallan, no se aplica nada
+    needs: [lint-y-tests, publicar] # primero los tests y la publicación; después, el apply
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:

@@ -27,14 +27,29 @@ Dos proyectos de Terraform:
    ```hcl
    alert_email = "tu-mail@ejemplo.com"
    ```
-4. **Crear el hub.**
+4. **Crear el bucket de datos primero.** La Lambda y los jobs usan el código publicado en ese
+   bucket (ver "Versiones del código"), así que el bucket tiene que existir antes.
    ```powershell
    cd infra/terraform
    terraform init -backend-config="backend.hcl"
-   terraform plan      # 21 to add: bucket de datos (4) + budget + Lambda (4) + orquestación (6) + Glue (6)
+   terraform apply -target="aws_s3_bucket.data"   # 1 to add
+   ```
+5. **Publicar el código a mano (solo esta vez; después lo hace el CI).** Desde la raíz del repo:
+   ```powershell
+   uv build --wheel
+   $v = uv version --short
+   $destino = "s3://refhub-data-<cuenta>-dev/artifacts/refhub/$v"
+   aws s3 cp "dist/refhub-$v-py3-none-any.whl" "$destino/"
+   aws s3 cp "dist/refhub-$v-py3-none-any.whl" "$destino/refhub-lambda.zip"
+   aws s3 cp glue/ "$destino/glue/" --recursive --exclude "*" --include "*.py"
+   ```
+6. **Crear el resto del hub.**
+   ```powershell
+   cd infra/terraform
+   terraform plan      # 28 to add: bucket de datos (3 más) + budget + Lambda (4) + orquestación (6) + Glue (14)
    terraform apply     # solo la primera vez; después aplica el CI (ver abajo)
    ```
-5. **Verificar.** `terraform plan` tiene que decir `No changes`.
+7. **Verificar.** `terraform plan` tiene que decir `No changes`.
 
 `backend.hcl`, `terraform.tfvars` y los `terraform.tfstate` no se suben a git.
 
@@ -79,8 +94,8 @@ Si el CI no puede entrar (`Not authorized to perform sts:AssumeRoleWithWebIdenti
 Si un apply se cortó y dejó el candado del state, desde esta carpeta:
 `terraform force-unlock <ID del candado>` (el ID sale en el mensaje de error).
 
-Los archivos tienen finales de línea LF (`.gitattributes`). Si no, el zip de la Lambda y la
-huella de los scripts de Glue darían distinto en tu máquina que en el CI.
+Los archivos tienen finales de línea LF (`.gitattributes`): el código es el mismo en tu máquina
+y en el CI, que es el que arma y publica el paquete.
 
 ## Si se pierde el state de bootstrap
 
@@ -106,8 +121,9 @@ terraform plan      # No changes
 ## Ingesta de GLEIF
 
 La Lambda `refhub-gleif-ingest-dev` baja el último delta diario de GLEIF a
-`landing/gleif/dt=<fecha de publicación>/` del bucket de datos. La ejecuta la máquina de estados
-`refhub-gleif-ingest-dev`, que la reintenta si falla. El schedule `refhub-gleif-diario-dev`
+`landing/gleif/dt=<fecha de publicación>/` del bucket de datos. La máquina de estados
+`refhub-gleif-ingest-dev` corre la Lambda (la reintenta si falla) y después los jobs de bronze y
+silver, uno detrás del otro (ver "Bronze y silver"). El schedule `refhub-gleif-diario-dev`
 (18:30 UTC) está creado pero **apagado**.
 
 Correrla a mano (desde esta carpeta):
@@ -119,7 +135,8 @@ aws stepfunctions describe-execution --execution-arn $exec --query "[status,outp
 ```
 
 Si dice `RUNNING`, repetir la última línea unos segundos después. Tiene que terminar en
-`SUCCEEDED`, con `"status": "subido"` (archivo nuevo) o `"ya_existia"` (ya estaba).
+`SUCCEEDED`, con `"status": "subido"` (archivo nuevo) o `"ya_existia"` (ya estaba), y con
+`"bronze"` y `"silver"` en `"estado": "SUCCEEDED"`.
 
 Verificar que el archivo está una sola vez:
 
@@ -138,13 +155,49 @@ Si el schedule estuvo apagado o falló más de un día, faltan publicaciones: ca
 delta `LastWeek` o buscar las publicaciones viejas en
 `https://goldencopy.gleif.org/api/v2/golden-copies/publishes`.
 
-Si cambia el código de `src/`, `terraform plan` muestra un `~` sobre la Lambda: es el zip
-nuevo. Es normal.
-
 Logs de la Lambda (se borran a los 14 días):
 
 ```powershell
 aws logs tail /aws/lambda/refhub-gleif-ingest-dev --since 1h
+```
+
+## Bronze y silver
+
+Tres jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 días):
+
+- `refhub-gleif-full-dev`: baja el archivo completo de GLEIF a `landing/` (carga inicial, a mano).
+- `refhub-gleif-bronze-dev`: carga en `refhub_bronze_dev.gleif_lei` los zips de `landing/` que
+  falten.
+- `refhub-gleif-silver-dev`: contrato, cuarentena y `MERGE` en `refhub_silver_dev`.
+
+Correr un job suelto:
+
+```powershell
+aws glue start-job-run --job-name refhub-gleif-bronze-dev
+```
+
+Consultas: Athena, workgroup `refhub-dev` (corta las consultas que leen más de 1 GB).
+
+Reprocesar un archivo en silver (por ejemplo, después de cambiar una regla): borrar su fila de
+`refhub_silver_dev.gleif_archivos_procesados` en Athena y correr el job de silver. Lo vuelve a
+procesar entero sin duplicar.
+
+## Versiones del código
+
+La Lambda y los tres jobs usan el código de `artifacts/refhub/<versión>/` del bucket de datos: el
+`.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre) y `glue/*.py`. Lo publica el CI al
+mergear, antes del apply, y **no pisa una versión ya publicada**.
+
+Versión nueva: cambiar `src/` o `glue/`, `uv version 0.3.1` y `refhub_version = "0.3.1"` en
+`variables.tf`, en el mismo PR. Si cambiás el código sin subir la versión, el CI avisa "ya
+existía y no se pisa" y en AWS sigue corriendo lo anterior.
+
+Volver atrás: un PR con la versión anterior en `refhub_version`.
+
+Requisito en GitHub (una vez, desde esta carpeta):
+
+```powershell
+gh variable set ARTIFACTS_BUCKET --body "$(terraform output -raw data_bucket)"
 ```
 
 ## Bajar todo

@@ -1,11 +1,13 @@
 # Silver: un job de Glue que aplica el contrato a bronze, manda lo que falla a cuarentena y
 # deja en silver la última versión de cada LEI.
 
-resource "aws_s3_object" "glue_gleif_silver" {
-  bucket      = aws_s3_bucket.data.id
-  key         = "artifacts/glue/gleif_silver.py"
-  source      = "${path.module}/../../glue/gleif_silver.py"
-  source_hash = filemd5("${path.module}/../../glue/gleif_silver.py")
+# El script lo publica el CI con el .whl; Terraform olvida el objeto viejo sin borrarlo.
+removed {
+  from = aws_s3_object.glue_gleif_silver
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_iam_role" "glue_gleif_silver" {
@@ -67,7 +69,7 @@ resource "aws_glue_job" "gleif_silver" {
   command {
     name            = "glueetl"
     python_version  = "3"
-    script_location = "s3://${aws_s3_bucket.data.bucket}/${aws_s3_object.glue_gleif_silver.key}"
+    script_location = "${local.artifacts}/glue/gleif_silver.py" # el que publicó el CI
   }
 
   default_arguments = merge(local.glue_common_args, {
