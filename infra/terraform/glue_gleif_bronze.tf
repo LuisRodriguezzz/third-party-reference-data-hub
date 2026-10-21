@@ -58,19 +58,3 @@ module "glue_gleif_bronze" {
 
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
 }
-
-# Mismos recursos, otra dirección (ver glue_gleif_full.tf). Se pueden sacar después del apply.
-moved {
-  from = aws_iam_role.glue_gleif_bronze
-  to   = module.glue_gleif_bronze.aws_iam_role.this
-}
-
-moved {
-  from = aws_iam_role_policy.glue_gleif_bronze
-  to   = module.glue_gleif_bronze.aws_iam_role_policy.this
-}
-
-moved {
-  from = aws_glue_job.gleif_bronze
-  to   = module.glue_gleif_bronze.aws_glue_job.this
-}

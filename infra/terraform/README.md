@@ -184,7 +184,8 @@ Cinco jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 dí
 - `refhub-sec-dev`: el último archivo de la SEC de `landing/` reemplaza
   `refhub_silver_dev.sec_empresas` (foto completa, sin bronze).
 
-Los dos últimos no hacen nada si el archivo más nuevo ya está en silver.
+Los dos últimos no hacen nada si el archivo más nuevo ya está en silver (salvo con full refresh,
+más abajo).
 
 Cada job se arma con el módulo `modules/glue_job` (su rol, su política y el job, con la
 configuración que comparten todos). Un job nuevo es un bloque `module` con su nombre, su script,
@@ -198,17 +199,31 @@ aws glue start-job-run --job-name refhub-gleif-bronze-dev
 
 Consultas: Athena, workgroup `refhub-dev` (corta las consultas que leen más de 1 GB).
 
-Reprocesar un archivo en silver (por ejemplo, después de cambiar una regla): borrar su fila de
-`refhub_silver_dev.gleif_archivos_procesados` en Athena y correr el job de silver. Lo vuelve a
-procesar entero sin duplicar.
+Recalcular una tabla de silver (full refresh): cuando cambia una regla (el contrato,
+`normalize_name`, qué versión gana) o una columna nueva necesita valores en las filas viejas.
+Los tres jobs de silver aceptan `--FULL_REFRESH true`: `refhub-gleif-silver-dev` procesa todos
+los archivos de bronze y reemplaza `gleif_lei` y el registro de archivos procesados enteros;
+los de foto completa vuelven a procesar el último archivo aunque ya esté en silver. Cada
+reemplazo es un solo commit. Borrar filas del registro **no** sirve: el `MERGE` solo pisa una
+fila con algo más nuevo, así que el mismo archivo otra vez no cambia nada.
 
-## Migraciones
+```powershell
+'{"--FULL_REFRESH": "true"}' | Out-File -Encoding ascii argumentos.json
+aws glue start-job-run --job-name refhub-gleif-silver-dev --arguments file://argumentos.json
+```
 
-Cambiar una tabla que ya tiene datos (por ejemplo, agregarle una columna) no lo hace el job:
-`CREATE TABLE IF NOT EXISTS` no toca una tabla que existe. El cambio va como un archivo numerado
-en `../../migraciones/`, en el mismo PR que el código que lo usa. Después de mergear, y antes de
-correr el job, se corre una vez en Athena (workgroup `refhub-dev`), en orden. Cada archivo dice
-qué hace y qué hay que correr después.
+El JSON va en un archivo porque PowerShell 5.1 les saca las comillas dobles a los argumentos de
+los programas externos: escrito en la línea, a la CLI le llega `{--FULL_REFRESH: true}` y falla.
+Sin `--arguments`, el job corre en su modo normal (el default `false` está en Terraform).
+
+## Cambios de esquema
+
+El esquema de cada tabla es su DDL en `src/refhub/ddl/`: un ambiente nuevo nace con el esquema
+final y no hay migraciones a mano. Una columna nueva (nullable) la agrega el job dueño de la
+tabla al arrancar, en el mismo PR que el código que la escribe; si las filas viejas necesitan
+valores, después se corre un full refresh. Renombrar, cambiar un tipo o borrar una columna va en
+dos pasos (expand/contract).
+Detalle: [ADR 0007](../../docs/adr/0007-evolucion-de-esquema-y-reprocesos.md).
 
 ## Versiones del código
 

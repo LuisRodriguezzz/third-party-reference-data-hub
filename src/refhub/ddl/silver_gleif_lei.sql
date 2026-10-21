@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS {db}.gleif_lei (
   next_renewal        timestamp          COMMENT 'Próxima renovación (UTC); vacía si no hay',
   _archivo            string    NOT NULL COMMENT 'Linaje: archivo de GLEIF del que salió la fila',
   _fecha_publicacion  date      NOT NULL COMMENT 'Linaje: fecha en que GLEIF publicó ese archivo',
-  -- Al final y sin NOT NULL porque se agregó a una tabla con datos (migraciones/0001): Iceberg
-  -- no deja agregar una columna obligatoria. El job la llena siempre.
+  -- Al final y sin NOT NULL porque se agregó a una tabla que ya tenía datos: Iceberg no deja
+  -- agregar una columna obligatoria (ver docs/adr/0007). El job la llena siempre.
   nombre_normalizado  string             COMMENT 'legal_name normalizado (refhub.names.normalize_name), para cruzar con la SEC'
 )
 USING iceberg

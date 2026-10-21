@@ -83,13 +83,14 @@ fecha como texto y nada lo frenaría.
   lote → se mide y se avisa** (hito 6).
 - Si se suma una regla al contrato que exige un campo, ese campo tiene que pasar a NOT NULL en el
   DDL (y al revés): las dos mitades tienen que contar la misma historia.
-- Cambiar el esquema de una tabla que ya tiene datos es una migración aparte (`ALTER TABLE`).
-  `CREATE TABLE IF NOT EXISTS` no toca una tabla existente: si el DDL cambió y no se migró, la
-  escritura falla porque las columnas no coinciden.
+- `CREATE TABLE IF NOT EXISTS` no toca una tabla existente: si el DDL cambió y la tabla no, la
+  escritura falla porque las columnas no coinciden. Cómo se cambia una tabla con datos: ADR 0007.
 - Un completo nuevo de GLEIF realinea silver con la fuente: lo que publica el completo pisa lo
   que venía de deltas anteriores.
-- Cambiar la regla de qué versión gana no corrige lo que ya está en silver: hay que reprocesar
-  (borrar los archivos del registro y volver a correr el job).
+- Cambiar la regla de qué versión gana no corrige lo que ya está en silver: hay que recalcular
+  con `--FULL_REFRESH true` (ADR 0007). Lo que decía antes (borrar los archivos del registro y
+  volver a correr el job) no alcanza: el `MERGE` solo pisa una fila con algo más nuevo, así que
+  el mismo archivo otra vez no cambia nada.
 - Cambiar `src/` o `glue/` sin subir la versión no publica nada: el CI avisa y en AWS sigue
   corriendo lo anterior. Volver atrás es un PR con la versión anterior.
 - Levantar el hub desde cero exige crear el bucket de datos y publicar el código antes del
@@ -118,7 +119,9 @@ genérico, como estaba previsto:
 - **Decisión:** se sigue con DDL en SQL + reglas en Python. Los dos jobs de foto completa
   (ISIN↔LEI y SEC) quedan duplicados a propósito; si llega una tercera foto completa con el
   mismo patrón, se evalúa una función común en `refhub`.
-- **Migraciones:** el primer cambio a una tabla con datos (`nombre_normalizado` en `gleif_lei`)
-  va como `migraciones/0001_*.sql`, numerado y en el repo, y se corre una vez en Athena antes de
-  correr el job. Criterio: migraciones versionadas, como en Flyway o Liquibase, pero sin la
-  herramienta: con un cambio cada tanto no se justifica sumarla.
+- **Migraciones** (reemplazada por el ADR 0007: sin pasos a mano; el job agrega las columnas
+  nuevas y `--FULL_REFRESH` recalcula): el primer cambio a una tabla con datos
+  (`nombre_normalizado` en `gleif_lei`) va como `migraciones/0001_*.sql`, numerado y en el
+  repo, y se corre una vez en Athena antes de correr el job. Criterio: migraciones versionadas,
+  como en Flyway o Liquibase, pero sin la herramienta: con un cambio cada tanto no se justifica
+  sumarla.

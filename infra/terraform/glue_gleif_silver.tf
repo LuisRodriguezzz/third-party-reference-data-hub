@@ -52,23 +52,8 @@ module "glue_gleif_silver" {
     "--conf"             = local.iceberg_conf
     "--BRONZE_DB"        = aws_glue_catalog_database.bronze.name
     "--SILVER_DB"        = aws_glue_catalog_database.silver.name
+    "--FULL_REFRESH"     = "false" # a mano, "true" recalcula la tabla entera (ADR 0007)
   })
 
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
-}
-
-# Mismos recursos, otra dirección (ver glue_gleif_full.tf). Se pueden sacar después del apply.
-moved {
-  from = aws_iam_role.glue_gleif_silver
-  to   = module.glue_gleif_silver.aws_iam_role.this
-}
-
-moved {
-  from = aws_iam_role_policy.glue_gleif_silver
-  to   = module.glue_gleif_silver.aws_iam_role_policy.this
-}
-
-moved {
-  from = aws_glue_job.gleif_silver
-  to   = module.glue_gleif_silver.aws_glue_job.this
 }

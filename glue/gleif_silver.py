@@ -1,7 +1,10 @@
 """Job de Glue: bronze.gleif_lei -> contrato -> silver.gleif_lei (tipada) + cuarentena.
 
-Idempotente por archivo: procesa los archivos de bronze que no están en el registro
-gleif_archivos_procesados, y cada escritura se puede repetir sin duplicar.
+Dos modos, como en dbt (ver docs/adr/0007):
+- incremental (el de todos los días): procesa los archivos de bronze que no están en el registro
+  gleif_archivos_procesados y los suma con un MERGE. Cada escritura se puede repetir sin duplicar.
+- full refresh (--FULL_REFRESH true): procesa todos los archivos de bronze y reemplaza silver y el
+  registro enteros, en un commit cada uno. Es para cuando cambia una regla y hay que recalcular.
 
 El contrato se hace cumplir en dos niveles:
 - estructura: las tablas se crean con su DDL (src/refhub/ddl/*.sql: tipos, NOT NULL y
@@ -23,7 +26,11 @@ from refhub.contract import row_problem
 from refhub.names import normalize_name
 from refhub.sources.gleif import COLUMNS
 
-args = getResolvedOptions(sys.argv, ["BRONZE_DB", "SILVER_DB"])
+# FULL_REFRESH tiene default "false" en Terraform: Step Functions llama sin argumentos.
+args = getResolvedOptions(sys.argv, ["BRONZE_DB", "SILVER_DB", "FULL_REFRESH"])
+if args["FULL_REFRESH"] not in ("true", "false"):  # un "True" o un "si" no pasa en silencio
+    raise ValueError(f"--FULL_REFRESH tiene que ser true o false, no {args['FULL_REFRESH']!r}")
+full_refresh = args["FULL_REFRESH"] == "true"
 silver_db = f"glue_catalog.{args['SILVER_DB']}"
 bronze = f"glue_catalog.{args['BRONZE_DB']}.gleif_lei"
 silver = f"{silver_db}.gleif_lei"
@@ -32,14 +39,15 @@ processed = f"{silver_db}.gleif_archivos_procesados"
 
 spark = SparkSession.builder.getOrCreate()
 print(f"refhub {version('refhub')}")  # qué versión del paquete instaló Glue
+print(f"Modo: {'full refresh' if full_refresh else 'incremental'}")
 normalize = F.udf(normalize_name, StringType())  # la misma función que probás con pytest
 
 
 def create_tables():
     """Paso 0: crea las tablas con su DDL, que viaja dentro del .whl (refhub/ddl/*.sql).
 
-    IF NOT EXISTS: si la tabla ya existe, no la toca. Cambiar una tabla que ya tiene datos
-    es una migración aparte (ALTER TABLE), no algo que el job haga solo.
+    IF NOT EXISTS: si la tabla ya existe, no la toca. Un ambiente nuevo nace con el esquema
+    actual; cómo se cambia una tabla que ya tiene datos está en docs/adr/0007.
     """
     for name in [
         "silver_gleif_lei",
@@ -50,13 +58,13 @@ def create_tables():
         spark.sql(ddl.format(db=silver_db))
 
 
-def process(pending):
-    """Pasos 2 a 8 para los archivos pendientes."""
+def process(file_names):
+    """Pasos 2 a 8 para esos archivos: los pendientes, o todos si es un full refresh."""
     # 2. Las columnas que usa silver, con los nombres del hito 1 (COLUMNS de gleif.py).
     selection = [F.col(column_name(gleif)).alias(ours) for gleif, ours in COLUMNS.items()]
     batch = (
         spark.table(bronze)
-        .where(F.col("_archivo").isin(pending))
+        .where(F.col("_archivo").isin(file_names))
         .select(*selection, "_archivo", "_fecha_publicacion")
     )
 
@@ -65,7 +73,10 @@ def process(pending):
     batch = batch.withColumn("motivo", problem(F.struct(*COLUMNS.values()))).cache()
 
     # 4. Cuarentena: las filas que no cumplen, con su motivo. Siguen intactas en bronze.
-    #    Reemplaza la partición de cada archivo: reprocesar no duplica.
+    #    Reemplaza la partición de cada archivo: reprocesar no duplica. Con overwrite y no con
+    #    overwritePartitions, que solo reemplaza las particiones que traen filas: si un archivo
+    #    reprocesado ya no tiene rechazadas, sus filas viejas quedarían. Así se borran aunque
+    #    no venga ninguna (el filtro coincide con particiones enteras, como pide Iceberg).
     rejected = batch.where(F.col("motivo").isNotNull()).select(
         *COLUMNS.values(),
         "_archivo",
@@ -73,7 +84,7 @@ def process(pending):
         "motivo",
         F.current_timestamp().alias("_procesado_en"),
     )
-    rejected.writeTo(quarantine).overwritePartitions()
+    rejected.writeTo(quarantine).overwrite(F.col("_archivo").isin(file_names))
 
     # 5. Las válidas, tipadas: los textos de fecha pasan a timestamp (en UTC).
     valid = batch.where(F.col("motivo").isNull()).select(
@@ -110,67 +121,59 @@ def process(pending):
         .drop("_n")
     )
 
-    # 7. Silver: MERGE = "si el LEI ya está y lo que llega es más nuevo (misma regla del paso 6),
-    #    reemplazalo; si no está, agregalo". Si llega algo igual o más viejo, no se toca:
-    #    repetir una corrida no cambia nada, y el orden en que llegan los archivos no importa.
-    #    La tabla ya existe (paso 0): la primera corrida es un MERGE contra una tabla vacía.
-    latest.createOrReplaceTempView("latest")
-    spark.sql(f"""
-        MERGE INTO {silver} AS t
-        USING latest AS s
-        ON t.lei = s.lei
-        WHEN MATCHED AND (
-            s._archivo > t._archivo
-            OR (s._archivo = t._archivo AND s.last_update > t.last_update)
-        ) THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
-    """)
+    # 7. Silver.
+    #    Full refresh: latest ya tiene todos los archivos, así que ES la tabla entera.
+    #    overwrite(True) = "borrá todas las filas y escribí estas", en un solo commit. Da lo
+    #    mismo que las corridas incrementales (la regla de qué versión gana es la misma
+    #    ventana), pero con las reglas de hoy aplicadas a todas las filas.
+    #    Incremental: MERGE = "si el LEI ya está y lo que llega es más nuevo (misma regla del
+    #    paso 6), reemplazalo; si no está, agregalo". Si llega algo igual o más viejo, no se
+    #    toca: repetir una corrida no cambia nada, y el orden en que llegan los archivos no
+    #    importa. Por eso reprocesar un archivo con MERGE no recalcula nada: hace falta el full
+    #    refresh. La tabla ya existe (paso 0): la primera corrida es un MERGE contra una vacía.
+    if full_refresh:
+        latest.writeTo(silver).overwrite(F.lit(True))
+    else:
+        latest.createOrReplaceTempView("latest")
+        spark.sql(f"""
+            MERGE INTO {silver} AS t
+            USING latest AS s
+            ON t.lei = s.lei
+            WHEN MATCHED AND (
+                s._archivo > t._archivo
+                OR (s._archivo = t._archivo AND s.last_update > t.last_update)
+            ) THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
 
     # 8. El registro, al final: si algo falló antes, el archivo se vuelve a procesar entero.
+    #    En el full refresh se reemplaza entero, como silver: los dos cuentan la misma historia.
     summary = batch.groupBy(F.col("_archivo").alias("archivo")).agg(
         F.count("*").alias("filas"),
         F.count("motivo").alias("rechazadas"),  # count de una columna no cuenta los nulos
     )
-    summary.withColumn("procesado_en", F.current_timestamp()).writeTo(processed).append()
+    summary = summary.withColumn("procesado_en", F.current_timestamp())
+    if full_refresh:
+        summary.writeTo(processed).overwrite(F.lit(True))
+    else:
+        summary.writeTo(processed).append()
     for row in summary.orderBy("archivo").collect():
         print(f"{row['archivo']}: {row['filas']} filas, {row['rechazadas']} a cuarentena")
-
-
-def fill_missing_names():
-    """Las filas cargadas antes de que existiera nombre_normalizado (hito 5C) lo tienen vacío.
-
-    Se completan una sola vez, con un MERGE que solo toca esa columna. Después ya no queda
-    ninguna vacía y no se escribe nada. Cuando haya corrido, se puede sacar en un PR de
-    limpieza.
-    """
-    missing = spark.table(silver).where(F.col("nombre_normalizado").isNull())
-    if missing.limit(1).count() == 0:
-        return
-    missing.select(
-        "lei", normalize("legal_name").alias("nombre_normalizado")
-    ).createOrReplaceTempView("nombres")
-    spark.sql(f"""
-        MERGE INTO {silver} AS t
-        USING nombres AS s
-        ON t.lei = s.lei
-        WHEN MATCHED THEN UPDATE SET t.nombre_normalizado = s.nombre_normalizado
-    """)
-    print("nombre_normalizado completado en las filas que lo tenían vacío")
 
 
 # 0. Las tablas, con su DDL (no con lo que traiga el primer DataFrame).
 create_tables()
 
-# 1. ¿Qué archivos de bronze faltan procesar?
+# 1. ¿Qué archivos de bronze hay que procesar? Los que faltan, o todos en un full refresh.
 in_bronze = {row["_archivo"] for row in spark.table(bronze).select("_archivo").distinct().collect()}
-done = {row["archivo"] for row in spark.table(processed).select("archivo").collect()}
-pending = sorted(in_bronze - done)
-print(f"Archivos para procesar: {pending}")
+if full_refresh:
+    to_process = sorted(in_bronze)
+else:
+    done = {row["archivo"] for row in spark.table(processed).select("archivo").collect()}
+    to_process = sorted(in_bronze - done)
+print(f"Archivos para procesar: {to_process}")
 
-if pending:
-    process(pending)
+if to_process:
+    process(to_process)
 else:
     print("Nada nuevo en bronze: no se escribe nada")
-
-# 9. Una sola vez, después de la migración del 5C: completar la columna nueva.
-fill_missing_names()
