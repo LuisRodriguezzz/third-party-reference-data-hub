@@ -1,7 +1,9 @@
 """Job de Glue: el último archivo ISIN↔LEI de landing -> contrato -> silver.gleif_isin_lei.
 
 Es una foto completa: la tabla se reemplaza entera con el archivo más nuevo (sin bronze y sin
-MERGE: lo que no vino en la foto, ya no existe). Si ese archivo ya está en silver, no hace nada.
+MERGE: lo que no vino en la foto, ya no existe). Si ese archivo ya está en silver, no hace nada,
+salvo con --FULL_REFRESH true, que lo vuelve a procesar (por ejemplo, después de cambiar una
+regla; ver docs/adr/0007).
 """
 
 import sys
@@ -18,7 +20,11 @@ from refhub.bronze import extract_csv, file_name
 from refhub.contract import isin_lei_problem
 from refhub.sources.gleif_isin_lei import publish_date
 
-args = getResolvedOptions(sys.argv, ["DATA_BUCKET", "SILVER_DB"])
+# FULL_REFRESH tiene default "false" en Terraform: Step Functions llama sin argumentos.
+args = getResolvedOptions(sys.argv, ["DATA_BUCKET", "SILVER_DB", "FULL_REFRESH"])
+if args["FULL_REFRESH"] not in ("true", "false"):  # un "True" o un "si" no pasa en silencio
+    raise ValueError(f"--FULL_REFRESH tiene que ser true o false, no {args['FULL_REFRESH']!r}")
+full_refresh = args["FULL_REFRESH"] == "true"
 bucket = args["DATA_BUCKET"]
 silver_db = f"glue_catalog.{args['SILVER_DB']}"
 table = f"{silver_db}.gleif_isin_lei"
@@ -26,6 +32,7 @@ quarantine = f"{silver_db}.gleif_isin_lei_cuarentena"
 
 spark = SparkSession.builder.getOrCreate()
 print(f"refhub {version('refhub')}")  # qué versión del paquete instaló Glue
+print(f"Modo: {'full refresh' if full_refresh else 'normal'}")
 s3 = boto3.client("s3")
 
 
@@ -62,13 +69,15 @@ def process(key: str):
     problem = F.udf(lambda isin, lei: isin_lei_problem({"isin": isin, "lei": lei}), StringType())
     batch = batch.withColumn("motivo", problem("isin", "lei")).cache()
 
-    # Cuarentena: la partición de este archivo (reprocesarlo la reemplaza, no la duplica).
+    # Cuarentena: la partición de este archivo (reprocesarlo la reemplaza, no la duplica). Con
+    # overwrite y no con overwritePartitions, que solo reemplaza las particiones que traen filas:
+    # si al reprocesarlo ya no hay rechazadas, las viejas quedarían. Así se borran igual.
     rejected = batch.where(F.col("motivo").isNotNull()).withColumn(
         "_procesado_en", F.current_timestamp()
     )
     rejected.select(
         "isin", "lei", "_archivo", "_fecha_publicacion", "motivo", "_procesado_en"
-    ).writeTo(quarantine).overwritePartitions()
+    ).writeTo(quarantine).overwrite(F.col("_archivo") == name)
 
     # Silver: overwrite(True) = "borrá todas las filas y escribí estas", en un solo commit.
     # Nadie ve la tabla a medias ni vacía, y los ISIN que GLEIF dio de baja desaparecen.
@@ -87,7 +96,7 @@ def process(key: str):
 create_tables()
 key = latest_key()
 current = spark.table(table).select("_archivo").limit(1).collect()
-if current and current[0]["_archivo"] == file_name(key):
+if current and current[0]["_archivo"] == file_name(key) and not full_refresh:
     print(f"{file_name(key)} ya está en silver: no se escribe nada")
 else:
     process(key)

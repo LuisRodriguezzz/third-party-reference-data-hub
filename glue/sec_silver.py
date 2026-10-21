@@ -1,7 +1,9 @@
 """Job de Glue: el último archivo de la SEC en landing -> contrato -> silver.sec_empresas.
 
 Es una foto completa, como ISIN↔LEI: la tabla se reemplaza entera con el archivo más nuevo (sin
-bronze y sin MERGE). Si ese archivo ya está en silver, no hace nada.
+bronze y sin MERGE). Si ese archivo ya está en silver, no hace nada, salvo con
+--FULL_REFRESH true, que lo vuelve a procesar (por ejemplo, después de cambiar una regla; ver
+docs/adr/0007).
 
 Son unas 10 mil filas: entran de sobra en la memoria del driver, así que se leen y se validan con
 Python común, sin UDF. Spark está para escribir las tablas Iceberg.
@@ -22,7 +24,11 @@ from refhub.contract import sec_problem
 from refhub.names import normalize_name
 from refhub.sources.sec import parse, publish_date
 
-args = getResolvedOptions(sys.argv, ["DATA_BUCKET", "SILVER_DB"])
+# FULL_REFRESH tiene default "false" en Terraform: Step Functions llama sin argumentos.
+args = getResolvedOptions(sys.argv, ["DATA_BUCKET", "SILVER_DB", "FULL_REFRESH"])
+if args["FULL_REFRESH"] not in ("true", "false"):  # un "True" o un "si" no pasa en silencio
+    raise ValueError(f"--FULL_REFRESH tiene que ser true o false, no {args['FULL_REFRESH']!r}")
+full_refresh = args["FULL_REFRESH"] == "true"
 bucket = args["DATA_BUCKET"]
 silver_db = f"glue_catalog.{args['SILVER_DB']}"
 table = f"{silver_db}.sec_empresas"
@@ -30,6 +36,7 @@ quarantine = f"{silver_db}.sec_empresas_cuarentena"
 
 spark = SparkSession.builder.getOrCreate()
 print(f"refhub {version('refhub')}")  # qué versión del paquete instaló Glue
+print(f"Modo: {'full refresh' if full_refresh else 'normal'}")
 s3 = boto3.client("s3")
 
 
@@ -76,7 +83,9 @@ def process(key: str):
         .withColumn("_fecha_publicacion", F.lit(publish_date(name)))
     )
 
-    # Cuarentena: la partición de este archivo (reprocesarlo la reemplaza, no la duplica).
+    # Cuarentena: la partición de este archivo (reprocesarlo la reemplaza, no la duplica). Con
+    # overwrite y no con overwritePartitions, que solo reemplaza las particiones que traen filas:
+    # si al reprocesarlo ya no hay rechazadas, las viejas quedarían. Así se borran igual.
     batch.where(F.col("motivo").isNotNull()).select(
         "cik",
         "name",
@@ -86,7 +95,7 @@ def process(key: str):
         "_fecha_publicacion",
         "motivo",
         F.current_timestamp().alias("_procesado_en"),
-    ).writeTo(quarantine).overwritePartitions()
+    ).writeTo(quarantine).overwrite(F.col("_archivo") == name)
 
     # Silver: reemplazo total en un solo commit, como en ISIN↔LEI. El CIK va con 10 dígitos,
     # como lo escribe EDGAR (CIK0000320193): así se cruza tal cual con las otras APIs de la SEC.
@@ -107,7 +116,7 @@ def process(key: str):
 create_tables()
 key = latest_key()
 current = spark.table(table).select("_archivo").limit(1).collect()
-if current and current[0]["_archivo"] == file_name(key):
+if current and current[0]["_archivo"] == file_name(key) and not full_refresh:
     print(f"{file_name(key)} ya está en silver: no se escribe nada")
 else:
     process(key)

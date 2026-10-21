@@ -42,6 +42,7 @@ module "glue_sec" {
     "--conf"             = local.iceberg_conf
     "--DATA_BUCKET"      = aws_s3_bucket.data.bucket
     "--SILVER_DB"        = aws_glue_catalog_database.silver.name
+    "--FULL_REFRESH"     = "false" # a mano, "true" recalcula la tabla entera (ADR 0007)
   })
 
   depends_on = [aws_cloudwatch_log_group.glue_output, aws_cloudwatch_log_group.glue_error]
