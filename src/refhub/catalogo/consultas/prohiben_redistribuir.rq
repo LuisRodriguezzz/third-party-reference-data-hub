@@ -1,0 +1,21 @@
+# ¿Qué datasets no se pueden redistribuir fuera del banco, y por qué regla?
+#
+# Un dataset no se puede redistribuir si tiene una prohibición para la distribución externa (o un
+# propósito más específico, como la publicación externa), propia o de algo de lo que deriva: un
+# dato derivado hereda las restricciones de su origen (ADR 0009).
+
+PREFIX odrl: <http://www.w3.org/ns/odrl/2/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX prop: <https://refhub.example.org/proposito/>
+
+SELECT DISTINCT ?dataset ?origen ?regla
+WHERE {
+    ?dataset prov:wasDerivedFrom* ?origen .         # el dataset mismo y todo su linaje
+    ?origen odrl:hasPolicy/odrl:prohibition ?regla .
+    ?regla odrl:constraint ?restriccion .
+    ?restriccion odrl:leftOperand odrl:purpose ;
+        odrl:rightOperand ?proposito .
+    ?proposito skos:broader* prop:distribucion_externa .
+}
+ORDER BY ?dataset
