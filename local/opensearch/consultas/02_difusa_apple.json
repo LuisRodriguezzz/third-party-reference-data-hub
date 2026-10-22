@@ -1,0 +1,14 @@
+{
+  "size": 5,
+  "_source": ["nombre", "lei", "ciks", "tickers", "pais", "camino", "en_golden_copy"],
+  "query": {
+    "bool": {
+      "must": {
+        "match": {
+          "nombres": { "query": "apple computer", "fuzziness": "AUTO" }
+        }
+      },
+      "should": { "term": { "en_golden_copy": { "value": true, "boost": 2 } } }
+    }
+  }
+}

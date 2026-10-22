@@ -1,0 +1,8 @@
+{
+  "_source": ["nombre", "lei", "ciks", "tickers"],
+  "query": {
+    "terms": {
+      "identificadores": ["US5949181045", "0001067983", "8I5DZWZKVSZI1NUHU748", "aapl"]
+    }
+  }
+}

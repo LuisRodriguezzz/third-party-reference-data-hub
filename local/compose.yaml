@@ -1,0 +1,45 @@
+# Dos consumidores locales de la golden copy (ADR 0014). Sirve con `podman-compose` y con
+# `docker compose`. Los puertos se publican SOLO en 127.0.0.1: nada queda expuesto en la red.
+name: refhub-local
+
+services:
+  opensearch:
+    image: docker.io/opensearchproject/opensearch:3.9.0
+    container_name: refhub-opensearch
+    environment:
+      discovery.type: single-node
+      # Sin el plugin de seguridad (sin TLS ni usuarios) SOLO porque escucha en 127.0.0.1.
+      # El trade-off está en el ADR 0014.
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      # Heap fijo de 1 GB (mínimo = máximo, como recomienda OpenSearch); el contenedor tiene
+      # 2 GB porque Lucene usa memoria fuera del heap.
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+    mem_limit: 2g
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - opensearch-datos:/usr/share/opensearch/data
+
+  oracle:
+    # La imagen "lite" oficial de Oracle Database Free: la base entera, sin los componentes
+    # opcionales que este ejemplo no usa. Pesa la cuarta parte que la completa.
+    image: container-registry.oracle.com/database/free:23.26.3.0-lite
+    container_name: refhub-oracle
+    environment:
+      # Contraseña de SYS, SYSTEM y PDBADMIN. Sale de local/.env (ignorado por git).
+      ORACLE_PWD: ${ORACLE_PWD:?falta ORACLE_PWD en local/.env}
+      # Que SQL*Plus adentro del contenedor muestre bien las tildes de los nombres.
+      NLS_LANG: AMERICAN_AMERICA.AL32UTF8
+    # Oracle Free usa como mucho 2 GB de RAM por licencia; el resto es margen para el proceso.
+    mem_limit: 3g
+    ports:
+      - "127.0.0.1:1521:1521"
+    volumes:
+      - oracle-datos:/opt/oracle/oradata
+      # Las consultas de ejemplo, de solo lectura, para correrlas con SQL*Plus adentro.
+      - ./oracle/consultas:/consultas:ro
+
+volumes:
+  opensearch-datos:
+  oracle-datos:
