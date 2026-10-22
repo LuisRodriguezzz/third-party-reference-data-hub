@@ -4,7 +4,7 @@ version = "0.15.0"
 description = "Hub de datos de referencia de terceros: golden copy de empresas e instrumentos (GLEIF, OpenFIGI, SEC EDGAR) con catálogo de datasets y licencias legibles por máquina (DCAT y ODRL)."
 readme = "README.md"
 authors = [
-    { name = "Luis Alberto Rodriguez", email = "alberto.rodriguezaguilar@ingenieria.uner.edu.ar" }
+    { name = "Luis Alberto Rodriguez", email = "131310791+LuisRodriguezzz@users.noreply.github.com" }
 ]
 requires-python = ">=3.11,<3.13"
 dependencies = []
