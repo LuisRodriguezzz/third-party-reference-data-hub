@@ -274,12 +274,12 @@ budget, 1 GB cap per Athena query, log retention, no NAT or VPC endpoints):
 | [0005](docs/adr/0005-cambios-por-pull-request.md) | Every change by pull request: plan on the PR, apply from CI, OIDC with two roles. |
 | [0006](docs/adr/0006-bronze-silver-iceberg.md) | Bronze and silver on Iceberg: schema as SQL DDL, row rules with quarantine, the latest published file wins, versioned artifacts. |
 | [0007](docs/adr/0007-evolucion-de-esquema-y-reprocesos.md) | Schema evolution and reprocessing: additive changes applied by the owning job, an explicit full refresh, expand/contract. |
-| [0008](docs/adr/0008-golden-copy.md) | Golden copy: CIK↔LEI entity resolution, codes before names, ambiguity left unresolved, gold in dbt. *(proposed)* |
+| [0008](docs/adr/0008-golden-copy.md) | Golden copy: CIK↔LEI entity resolution, codes before names, ambiguity left unresolved, gold in dbt. |
 | [0009](docs/adr/0009-catalogo-y-licencias.md) | Catalog in DCAT and licenses in ODRL, evaluated in process with rdflib. |
 | [0010](docs/adr/0010-sin-neptune.md) | No Neptune: a graph of a few thousand triples does not need a graph server. |
-| [0011](docs/adr/0011-dbt-en-el-pipeline.md) | dbt runs in CodeBuild, started by Step Functions; metrics, alarms and VACUUM in the same pipeline. *(proposed)* |
+| [0011](docs/adr/0011-dbt-en-el-pipeline.md) | dbt runs in CodeBuild, started by Step Functions; metrics, alarms and VACUUM in the same pipeline. |
 | [0012](docs/adr/0012-api-de-permisos.md) | Permissions API: policies compiled in CI, a Lambda with an IAM Function URL, a decision log. |
-| [0013](docs/adr/0013-exposicion-por-grupo.md) | Exposure by economic group from the published ultimate parent; synthetic portfolio, declared. *(proposed)* |
+| [0013](docs/adr/0013-exposicion-por-grupo.md) | Exposure by economic group from the published ultimate parent; synthetic portfolio, declared. |
 | [0014](docs/adr/0014-consumidores-locales.md) | Two local consumers in Podman (OpenSearch search, Oracle hierarchy queries), not managed services. |
 
 Postmortems (blameless): [0001 · silver kept a version GLEIF no longer published](docs/postmortems/0001-version-que-gana.md)
