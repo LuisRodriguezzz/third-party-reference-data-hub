@@ -100,10 +100,10 @@ flowchart LR
 - **Measured end to end:** the full pipeline ran with every step green on 2026-10-21
   (`prueba-completa-20261022T021256`) in **31 min 38 s**: the four source branches in parallel
   8 min 3 s (the longest is ISIN↔LEI followed by OpenFIGI), dbt in CodeBuild 2 min 39 s, metrics
-  9 s, and the Iceberg `VACUUM` of the 10 silver tables 20 min 47 s. That last step runs one table
-  at a time and each Athena step waits about a minute in Step Functions, although every query
-  finishes in under 4 s; it costs nothing extra (Standard workflows bill per transition, not per
-  minute), but it is the obvious place to shorten the run.
+  9 s, and the Iceberg `VACUUM` of the 10 silver tables 20 min 47 s. In that run the last step went
+  one table at a time and each Athena step waited about a minute in Step Functions, although every
+  query finished in under 4 s. It now runs five tables at a time (PR #28), at no extra cost; the
+  shorter duration has not been measured yet.
 - **Delivery:** every change goes through a pull request; CI posts `terraform plan` on the PR and,
   on merge, builds the package once, publishes it to S3 under an immutable version and runs
   `terraform apply`. GitHub authenticates to AWS with OIDC (no stored keys), with a read-only role

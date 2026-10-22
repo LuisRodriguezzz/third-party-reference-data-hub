@@ -184,7 +184,7 @@
   </div>
 </div>
 <p>The gold set was labeled <strong>blind</strong>: the labeler never saw what the hub chose. The labeler was an AI agent working only from GLEIF’s public API and SEC EDGAR, with the evidence for every row kept. A person then audited 10 random labels against GLEIF and EDGAR: <strong>10 of 10 agreed</strong> (with 10 cases, that puts the labeler’s agreement at 72% – 100%). Margins are 95% Wilson intervals.</p>
-<p>Of the 31 min 38 s, the four source branches in parallel take 8 min 3 s, dbt in CodeBuild 2 min 39 s, metrics 9 s, and the Iceberg <code>VACUUM</code> of the 10 silver tables 20 min 47 s, one table at a time. That last step costs nothing extra (Standard workflows bill per transition, not per minute), but it is the obvious place to shorten the run. Of the cost, Glue is 0.19 USD; CodeBuild and Athena about a cent each.</p>
+<p>Of the 31 min 38 s, the four source branches in parallel take 8 min 3 s, dbt in CodeBuild 2 min 39 s, metrics 9 s, and the Iceberg <code>VACUUM</code> of the 10 silver tables 20 min 47 s, one table at a time in that run. It now runs five tables at a time, at no extra cost (Standard workflows bill per transition, not per minute); the shorter duration has not been measured yet. Of the cost, Glue is 0.19 USD; CodeBuild and Athena about a cent each.</p>
 </section>
 
 <section id="architecture">
