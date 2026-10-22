@@ -46,3 +46,12 @@ resource "aws_glue_catalog_database" "silver" {
   description  = "Silver del hub: datos tipados y validados, cuarentena con motivo."
   location_uri = "s3://${aws_s3_bucket.data.bucket}/silver/"
 }
+
+# Gold: la golden copy, con las fuentes ya cruzadas. Sus tablas no las crea Spark sino dbt
+# (carpeta dbt/), así que el esquema de cada una vive en el YAML de dbt (ADR 0006 y 0008).
+# Terraform solo crea la base y le da su carpeta; dbt guarda cada tabla en gold/<tabla>/<id>.
+resource "aws_glue_catalog_database" "gold" {
+  name         = "refhub_gold_${var.environment}"
+  description  = "Gold del hub: la golden copy de empresas, una fila por CIK, armada con dbt."
+  location_uri = "s3://${aws_s3_bucket.data.bucket}/gold/"
+}

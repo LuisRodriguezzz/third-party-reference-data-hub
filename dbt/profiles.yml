@@ -1,0 +1,21 @@
+# Conexión de dbt con Athena. Está versionado porque no tiene secretos:
+# - las credenciales salen de la cadena estándar de AWS (variables de entorno, ~/.aws o un rol),
+#   la misma que usa el AWS CLI; por eso no hay aws_profile_name;
+# - el bucket llega por variable de entorno (REFHUB_DATA_BUCKET, sale de terraform output), así
+#   el número de cuenta no queda escrito en el repo.
+refhub:
+  target: dev
+  outputs:
+    dev:
+      type: athena
+      region_name: us-east-1
+      database: awsdatacatalog # el Glue Data Catalog de la cuenta
+      schema: refhub_gold_dev # la base de Glue donde dbt crea las tablas (la crea Terraform)
+      # El workgroup corta cualquier consulta que lea más de 1 GB, también las de dbt.
+      work_group: refhub-dev
+      # dbt-athena lo exige, pero el workgroup impone su propia carpeta de resultados (la misma):
+      # se borran a los 7 días. Las tablas NO van acá, van a s3_data_dir.
+      s3_staging_dir: "s3://{{ env_var('REFHUB_DATA_BUCKET') }}/athena-results/"
+      s3_data_dir: "s3://{{ env_var('REFHUB_DATA_BUCKET') }}/gold/"
+      s3_data_naming: table_unique
+      threads: 4

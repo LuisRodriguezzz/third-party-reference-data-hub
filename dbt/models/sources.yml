@@ -1,0 +1,18 @@
+# Lo que gold lee: las tablas de silver. Las crean y validan los jobs de Glue (su esquema está en
+# src/refhub/ddl/), así que acá solo se nombran: dbt no las construye ni las vuelve a describir.
+version: 2
+
+sources:
+  - name: silver
+    schema: "refhub_silver_{{ target.name }}"
+    tables:
+      - name: gleif_lei
+        description: Una fila por LEI, la última versión publicada por GLEIF.
+      - name: gleif_isin_lei
+        description: Una fila por ISIN, con el LEI de la empresa que lo emitió (GLEIF y ANNA).
+      - name: sec_empresas
+        description: Las empresas que cotizan en EE. UU. según la SEC, una fila por ticker.
+      - name: openfigi_tickers
+        description: >
+          Una fila por ISIN de acciones de EE. UU. mandado a OpenFIGI, con su FIGI y su ticker
+          (nulos si OpenFIGI no devolvió nada; ver resultados y motivo).

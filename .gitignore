@@ -16,3 +16,9 @@ data/
 *.tfvars
 .env
 backend.hcl
+
+# dbt: lo que genera al compilar y correr
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
