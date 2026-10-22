@@ -77,9 +77,36 @@ ISIN→FIGI y ticker (OpenFIGI, `silver.openfigi_tickers`) y CIK↔ticker (la SE
 
 ## Métrica
 
-**Pendiente (5F):** precisión y recall del cruce contra un gold set de 100 empresas al azar
-revisadas a mano, con fecha y margen. Hasta entonces, las cifras de arriba son de cobertura, no
-de acierto.
+Las cifras de cobertura (cuántas empresas quedaron con LEI) no dicen si el LEI es el correcto.
+La métrica de acierto es `gold.calidad_matching`, contra un gold set (`dbt/README.md`).
+
+- **Muestra:** 100 CIK de `gold.empresas` elegidos al azar con semilla fija, entre todas las
+  empresas y no solo las que tienen LEI: el recall necesita también a las que el cruce dejó sin
+  LEI.
+- **Etiquetado a ciegas por un agente de IA:** para cada CIK, el agente decide la respuesta
+  correcta buscando en GLEIF y en la SEC **sin ver lo que eligió el cruce**: un LEI, `SIN_LEI` (la
+  empresa no tiene LEI) o `DUDA` (no se pudo decidir), con su confianza y la evidencia. A ciegas,
+  para que la respuesta del cruce no condicione la del etiquetador. Lo etiqueta un agente y no
+  una persona por costo: 100 búsquedas a mano en dos registros es mucho trabajo para un proyecto
+  de una persona.
+- **Auditoría humana de 10:** una persona revisa 10 casos elegidos al azar y anota si llega a la
+  misma respuesta. Es lo que dice cuánto confiar en el etiquetado del agente; si la auditoría
+  encuentra errores, las cifras se leen con ese descuento.
+- **Definiciones:** los `DUDA` se excluyen y se cuentan aparte. **Precisión** = de los CIK a los
+  que el cruce les asignó un LEI, cuántos tienen el correcto (un LEI equivocado y un LEI asignado
+  a una empresa `SIN_LEI` cuentan en contra). **Recall** = de los CIK que tienen LEI de verdad, a
+  cuántos el cruce les encontró el correcto (las `SIN_LEI` no están en el denominador). La
+  precisión va por camino y en total; el recall, solo en total, porque una empresa que el cruce
+  no encontró no tiene camino.
+- **Margen:** el intervalo de confianza del 95 % de Wilson, el estándar para proporciones con
+  muestras chicas. La aproximación normal (p ± 1,96·√(p(1-p)/n)) se pasa de 1 cuando la
+  proporción está cerca de 1 y da margen cero si acierta todo; Wilson no. Con 100 casos el margen
+  es de varios puntos: la cifra se publica con su intervalo, no sola.
+
+**Resultado (PENDIENTE):** medido el PENDIENTE sobre la corrida PENDIENTE. Precisión total
+PENDIENTE (IC 95 %: PENDIENTE a PENDIENTE), por códigos PENDIENTE y por nombre PENDIENTE. Recall
+PENDIENTE (IC 95 %: PENDIENTE a PENDIENTE). Casos `DUDA`: PENDIENTE. Auditoría: PENDIENTE de 10
+coinciden.
 
 ## Consecuencias
 
