@@ -173,7 +173,7 @@ aws logs tail /aws/lambda/refhub-gleif-ingest-dev --since 1h
 
 ## Bronze y silver
 
-Cinco jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 días):
+Seis jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 días):
 
 - `refhub-gleif-full-dev`: baja el archivo completo de GLEIF a `landing/` (carga inicial, a mano).
 - `refhub-gleif-bronze-dev`: carga en `refhub_bronze_dev.gleif_lei` los zips de `landing/` que
@@ -183,9 +183,24 @@ Cinco jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 dí
   `refhub_silver_dev.gleif_isin_lei` (foto completa, sin bronze).
 - `refhub-sec-dev`: el último archivo de la SEC de `landing/` reemplaza
   `refhub_silver_dev.sec_empresas` (foto completa, sin bronze).
+- `refhub-openfigi-dev`: pregunta a la API de OpenFIGI por los ISIN de acciones de EE. UU. de
+  `gleif_isin_lei` (unos 77 mil, de a 100 por pedido, unos 10 minutos) y reemplaza
+  `refhub_silver_dev.openfigi_tickers` con su ticker y su FIGI. Las respuestas crudas quedan en
+  `landing/openfigi/dt=<fecha de la consulta>/`. Necesita `gleif_isin_lei` cargada y la clave de
+  la API en SSM (`/refhub/openfigi_api_key`, SecureString), que se crea a mano una vez:
+  `aws ssm put-parameter --name /refhub/openfigi_api_key --type SecureString --value <clave>`.
 
-Los dos últimos no hacen nada si el archivo más nuevo ya está en silver (salvo con full refresh,
-más abajo).
+`refhub-gleif-isin-lei-dev` y `refhub-sec-dev` no hacen nada si el archivo más nuevo ya está en
+silver (salvo con full refresh, más abajo). `refhub-openfigi-dev` no tiene ese caso: cada corrida
+es una consulta nueva, así que siempre recalcula la tabla entera (y no acepta `--FULL_REFRESH`).
+Se corre como cualquier job suelto:
+
+```powershell
+aws glue start-job-run --job-name refhub-openfigi-dev
+```
+
+En el log `output` imprime cuántos ISIN mandó, cuántos volvieron con ticker, cuántos sin
+resultado y cuántos con error.
 
 Cada job se arma con el módulo `modules/glue_job` (su rol, su política y el job, con la
 configuración que comparten todos). Un job nuevo es un bloque `module` con su nombre, su script,
