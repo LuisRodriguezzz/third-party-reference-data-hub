@@ -100,3 +100,23 @@ Criterio, en este orden:
   - Los permisos de Glue que pide dbt-athena se armaron leyendo su código (crear, cambiar y
     borrar tablas y versiones de tabla, solo en gold). Si falta alguno, el build falla con
     `AccessDenied` y se agrega en un PR.
+
+## Adenda (hito 6B): métricas, alertas y mantenimiento
+
+- **Las métricas salen del scorecard de gold** (`scorecard_fuentes`, `scorecard_cruce`, en dbt
+  con contrato y tests) y las publica una Lambda chica al final del pipeline, con **Embedded
+  Metric Format**: un JSON en el log que CloudWatch convierte en métrica, sin `PutMetricData` ni
+  permisos de CloudWatch. **Seis métricas agregadas con una sola dimensión** (`ambiente`): cada
+  combinación de nombre y dimensiones es una métrica paga, y el free tier cubre diez. El detalle
+  por fuente queda en la tabla, no en CloudWatch.
+- **La regla de "atrasada" vive en dbt** (los días tolerados por fuente, al principio de
+  `scorecard_fuentes.sql`, con su unit test), no en Python: la Lambda solo cuenta.
+- **Alertas por mail con SNS**, dos alarmas: `ExecutionsFailed` de Step Functions (gratis) y
+  `fuentes_atrasadas > 0`. El tema no se cifra con una clave propia (prohibidas) y con la
+  administrada `aws/sns` CloudWatch no puede publicar.
+- **`VACUUM` de silver al final del mismo pipeline**, no en una máquina semanal aparte: es lo
+  más simple (sin otra máquina, otro rol ni otro schedule), corre siempre después de que
+  cambió silver y cuesta unos centavos de requests a S3. **Retención de 7 días**
+  (`vacuum_max_snapshot_age_seconds`, que Athena lee de la tabla y el pipeline fija antes de
+  cada `VACUUM`, porque las tablas las crea Spark): una semana de time travel; lo anterior se
+  recupera desde landing (ADR 0007).

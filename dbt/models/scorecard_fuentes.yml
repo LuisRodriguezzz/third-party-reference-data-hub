@@ -1,0 +1,106 @@
+version: 2
+
+models:
+  - name: scorecard_fuentes
+    description: >
+      Una fila por fuente: la última fecha publicada que llegó a silver, cuántos días lleva sin
+      publicar contra los que se le toleran (la regla está al principio del SQL), cuántas filas
+      tiene y qué parte de la última carga fue a cuarentena.
+    columns:
+      - name: fuente
+        data_type: varchar
+        description: La fuente, con el mismo nombre que usa la Lambda de ingesta (gleif, sec...).
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [gleif, gleif_isin_lei, gleif_rr, sec, openfigi]
+      - name: tabla
+        data_type: varchar
+        description: La tabla de silver de donde salen los números.
+        data_tests: [not_null]
+      - name: ultima_publicacion
+        data_type: date
+        description: >
+          La fecha de publicación más nueva en silver (la del proveedor; en OpenFIGI, la de la
+          consulta). Nula si la tabla está vacía.
+      - name: dias_tolerados
+        data_type: integer
+        description: Cuántos días puede pasar la fuente sin publicar antes de quedar atrasada.
+        data_tests: [not_null]
+      - name: dias_sin_publicar
+        data_type: integer
+        description: Días entre la última publicación y hoy.
+      - name: dias_atraso
+        data_type: integer
+        description: Los días sin publicar que pasan de los tolerados (0 si está al día).
+      - name: atrasada
+        data_type: boolean
+        description: Pasó más días sin publicar que los tolerados, o no tiene datos.
+        data_tests: [not_null]
+      - name: filas
+        data_type: bigint
+        description: Filas de la tabla de silver.
+        data_tests: [not_null]
+      - name: filas_cuarentena
+        data_type: bigint
+        description: >
+          Filas de la última carga que fueron a cuarentena. Nula en OpenFIGI, que no tiene
+          cuarentena.
+      - name: porcentaje_cuarentena
+        data_type: double
+        description: filas_cuarentena sobre todas las filas de la última carga, de 0 a 100.
+
+# El test de negocio: la regla de "atrasada" con una fecha fija, una fuente al día, una pasada de
+# su margen, una justo en el borde y una sin datos. También la cuenta de la cuarentena.
+unit_tests:
+  - name: atrasada_si_pasa_sus_dias_tolerados_o_no_tiene_datos
+    model: scorecard_fuentes
+    overrides:
+      vars:
+        fecha_scorecard: "date '2026-10-21'"
+    given:
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: L1, _fecha_publicacion: "2026-10-19" }
+          - { lei: L2, _fecha_publicacion: "2026-10-20" }
+      - input: source('silver', 'gleif_archivos_procesados')
+        rows:
+          # Cuenta solo la última corrida: la vieja, con sus 50 rechazadas, no entra.
+          - { archivo: viejo, filas: 100, rechazadas: 50, procesado_en: "2026-10-19 18:40:00" }
+          - { archivo: nuevo, filas: 100, rechazadas: 2, procesado_en: "2026-10-20 18:40:00" }
+      - input: source('silver', 'gleif_isin_lei')
+        rows:
+          - { isin: I1, _archivo: isin-1018, _fecha_publicacion: "2026-10-18" }
+          - { isin: I2, _archivo: isin-1018, _fecha_publicacion: "2026-10-18" }
+          - { isin: I3, _archivo: isin-1018, _fecha_publicacion: "2026-10-18" }
+      - input: source('silver', 'gleif_isin_lei_cuarentena')
+        rows:
+          # Solo cuenta la del archivo que está en silver.
+          - { isin: X1, _archivo: isin-1018 }
+          - { isin: X2, _archivo: isin-1001 }
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000000001", _archivo: sec-1014, _fecha_publicacion: "2026-10-14" }
+      - input: source('silver', 'sec_empresas_cuarentena')
+        rows: []
+      - input: source('silver', 'gleif_relaciones')
+        rows: []
+      - input: source('silver', 'gleif_relaciones_cuarentena')
+        rows: []
+      - input: source('silver', 'openfigi_tickers')
+        rows:
+          - { isin: I1, _fecha_publicacion: "2026-10-21" }
+    expect:
+      # Todas las filas con las mismas columnas: dbt arma la tabla esperada con un UNION.
+      rows:
+        # Lo más nuevo es del 20: 1 día sin publicar, tolera 1, al día. Cuarentena: 2 de 100.
+        - { fuente: gleif, dias_sin_publicar: 1, dias_atraso: 0, atrasada: false, filas: 2, filas_cuarentena: 2, porcentaje_cuarentena: 2.0 }
+        # 3 días, tolera 2: atrasada. Cuarentena: 1 de 4 filas de ese archivo.
+        - { fuente: gleif_isin_lei, dias_sin_publicar: 3, dias_atraso: 1, atrasada: true, filas: 3, filas_cuarentena: 1, porcentaje_cuarentena: 25.0 }
+        # 7 días, tolera 7: justo en el borde, todavía al día.
+        - { fuente: sec, dias_sin_publicar: 7, dias_atraso: 0, atrasada: false, filas: 1, filas_cuarentena: 0, porcentaje_cuarentena: 0.0 }
+        # Sin datos: atrasada, sin fecha.
+        - { fuente: gleif_rr, dias_sin_publicar: null, dias_atraso: null, atrasada: true, filas: 0, filas_cuarentena: 0, porcentaje_cuarentena: null }
+        - { fuente: openfigi, dias_sin_publicar: 0, dias_atraso: 0, atrasada: false, filas: 1, filas_cuarentena: null, porcentaje_cuarentena: null }

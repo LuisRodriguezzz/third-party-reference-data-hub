@@ -130,6 +130,10 @@ La máquina de estados `refhub-pipeline-dev` (`orquestacion.tf`) corre todo, en 
    - SEC: la Lambda (`sec`) → `refhub-sec-dev`.
    - Relaciones de GLEIF: la Lambda (`gleif_rr`) → `refhub-gleif-relaciones-dev`.
 2. **Gold**: `dbt build` en el proyecto de CodeBuild `refhub-dbt-dev` (ver "Gold en CodeBuild").
+3. **Métricas**: la Lambda `refhub-metricas-dev` lee el scorecard de gold y lo publica en
+   CloudWatch (ver "Observabilidad").
+4. **Mantenimiento de silver**: `VACUUM` en Athena sobre cada tabla de silver (ver
+   "Mantenimiento de Iceberg").
 
 Cada paso espera a que el anterior termine (`.sync`). Los pasos de la Lambda se reintentan (es
 idempotente); los jobs y dbt no, porque cuestan: si uno falla, la ejecución falla, Step Functions
@@ -151,7 +155,7 @@ aws stepfunctions describe-execution --execution-arn $exec --query "[status,outp
 Tarda unos 15 minutos (la rama más larga es ISIN↔LEI + OpenFIGI, más dbt). Si dice `RUNNING`,
 repetir la última línea más tarde. Tiene que terminar en `SUCCEEDED`; en la salida, `fuentes`
 tiene una entrada por rama (lo que devolvió la Lambda, `"subido"` o `"ya_existia"`, y el estado de
-cada job) y `gold` el estado del build. Si falló, la consola de Step Functions muestra en qué paso
+cada job), `gold` el estado del build y `metricas` lo que se publicó en CloudWatch. Si falló, la consola de Step Functions muestra en qué paso
 (en rojo) y con qué error.
 
 La Lambda `refhub-gleif-ingest-dev` baja a `landing/` la fuente que dice el evento (ver abajo).
@@ -278,6 +282,86 @@ aws codebuild batch-get-builds --ids $build --query "builds[0].buildStatus" --ou
 Un cambio en `dbt/` llega a AWS como el resto del código: con una versión nueva (ver "Versiones
 del código"). Mientras tanto, `dbt build` desde tu máquina sigue funcionando igual
 (`dbt/README.md`).
+
+## Observabilidad
+
+**El scorecard** (gold, lo arma dbt en cada corrida; detalle en `dbt/README.md`):
+
+- `refhub_gold_dev.scorecard_fuentes`: una fila por fuente con la última fecha publicada, los días
+  sin publicar, los tolerados y si está `atrasada`, las filas y el % de la última carga que fue a
+  cuarentena. **La regla de "atrasada"** (cuántos días tolera cada fuente) está al principio de
+  `dbt/models/scorecard_fuentes.sql`.
+- `refhub_gold_dev.scorecard_cruce`: una fila con las empresas, cuántas con LEI (y el %), por
+  qué camino, conflictos, ambiguas y sin candidatos.
+
+```sql
+select * from refhub_gold_dev.scorecard_fuentes order by fuente;
+select * from refhub_gold_dev.scorecard_cruce;
+```
+
+**Las métricas** (namespace `refhub`, dimensión `ambiente`): `fuentes_atrasadas`,
+`filas_cuarentena`, `empresas`, `porcentaje_con_lei`, `conflictos` y `ambiguos`. Las publica la
+Lambda `refhub-metricas-dev` al final de cada corrida, con Embedded Metric Format: imprime un JSON
+en su log y CloudWatch lo convierte en métricas (sin `PutMetricData`). Son seis a propósito: cada
+métrica se paga y el free tier cubre diez. Qué métricas y con qué valores: `src/refhub/metricas.py`.
+El JSON que publicó, en el log:
+
+```powershell
+aws logs tail /aws/lambda/refhub-metricas-dev --since 1d
+```
+
+**Las alertas** van por mail, desde el tema de SNS `refhub-alertas-dev`:
+
+- `refhub-pipeline-fallo-dev`: una ejecución de `refhub-pipeline-dev` falló (métrica
+  `ExecutionsFailed` de Step Functions, gratis).
+- `refhub-fuentes-atrasadas-dev`: `fuentes_atrasadas > 0` en la última corrida. Cuál y por cuántos
+  días: `scorecard_fuentes`.
+
+Cada alarma manda un mail al entrar en alarma y vuelve sola a OK a los 5 minutos (sin dato es
+"todo bien"), así cada corrida con problemas avisa una vez.
+
+**Confirmar el mail (una vez, después del primer apply):** AWS manda a `alert_email` un mail
+"AWS Notification - Subscription Confirmation". Hasta que no hacés clic en "Confirm
+subscription", **no llega ninguna alerta**. Para ver si quedó confirmada:
+
+```powershell
+$topic = aws sns list-topics --query "Topics[?contains(TopicArn,'refhub-alertas')].TopicArn" --output text
+aws sns list-subscriptions-by-topic --topic-arn $topic --query "Subscriptions[].SubscriptionArn" --output text
+```
+
+Si dice `PendingConfirmation`, buscá el mail (también en spam). El link dura 3 días: si se
+venció, SNS borra la suscripción pendiente y el próximo `terraform plan` la muestra para crearla
+de nuevo (con eso llega otro mail).
+
+Probar que el mail llega, sin romper nada: poner la alarma en ALARM a mano (vuelve sola a OK en
+la evaluación siguiente):
+
+```powershell
+aws cloudwatch set-alarm-state --alarm-name refhub-pipeline-fallo-dev --state-value ALARM --state-reason "Prueba del mail"
+```
+
+## Mantenimiento de Iceberg
+
+Cada `MERGE` o reemplazo de silver es copy-on-write: reescribe archivos enteros, y los viejos
+quedan en S3 mientras algún snapshot los use. Al final de cada corrida, el pipeline corre en
+Athena, tabla por tabla de silver:
+
+1. `ALTER TABLE ... SET TBLPROPERTIES ('vacuum_max_snapshot_age_seconds' = '604800')`: la
+   retención, 7 días (el default de Athena son 5).
+2. `VACUUM ...`: borra los snapshots de más de 7 días (siempre deja al menos el actual), los
+   archivos que solo usaban ellos y los huérfanos de más de 7 días.
+
+Con 7 días se puede volver atrás (time travel) a cualquier corrida de la última semana; lo de
+antes se recupera reprocesando desde landing (full refresh, "Bronze y silver"). Para cambiar la
+retención o sumar una tabla: `retencion_snapshots_segundos` y `tablas_silver` en
+`orquestacion.tf`. Bronze no entra: solo agrega filas, así que sus snapshots viejos no ocupan
+archivos de datos aparte.
+
+Ver los snapshots que quedan de una tabla:
+
+```sql
+select committed_at, snapshot_id, operation from "refhub_silver_dev"."gleif_lei$snapshots" order by committed_at;
+```
 
 ## Cambios de esquema
 

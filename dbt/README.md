@@ -12,6 +12,8 @@ Los modelos de gold: la golden copy de empresas (ADR 0008) y la exposición por 
 | `identificadores` | una fila por (cik, esquema, valor): CIK, LEI, ISIN, FIGI y TICKER |
 | `grupos` | una fila por LEI con su controlante final (la cabeza de su grupo económico) |
 | `exposicion_por_grupo` | la suma de la cartera sintética por controlante final |
+| `scorecard_fuentes` | una fila por fuente: última publicación, días de atraso, `atrasada`, filas y % a cuarentena |
+| `scorecard_cruce` | una fila: empresas, % con LEI, por camino, conflictos, ambiguas y sin candidatos |
 
 ## La cartera sintética (seed)
 
@@ -70,6 +72,15 @@ se sigue con el que depende de él. Los unit tests de un modelo corren antes de 
   valor en `REFHUB_DATA_BUCKET`).
 
 ## Cosas a saber
+
+- **La regla de "atrasada"** (cuántos días puede pasar cada fuente sin publicar) está al principio
+  de `scorecard_fuentes.sql`, y su unit test fija la fecha de hoy con la variable
+  `fecha_scorecard` (por defecto, `current_date`). La Lambda de métricas solo cuenta las
+  atrasadas: no repite la regla.
+- **Los unit tests crean una tabla temporal** en `refhub_gold_dev` (`<nombre del test>__dbt_tmp`)
+  y la borran al terminar. Si un unit test se corta por un error, la tabla puede quedar y el
+  siguiente falla con `TABLE_ALREADY_EXISTS`: borrarla (`aws glue delete-table --database-name
+  refhub_gold_dev --name <tabla>`) y volver a correr.
 
 - **El tope de 1 GB del workgroup corta también las consultas de dbt.** Hoy cada modelo lee unos
   140 MB.

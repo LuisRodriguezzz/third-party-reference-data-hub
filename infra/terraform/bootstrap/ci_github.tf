@@ -199,7 +199,7 @@ data "aws_iam_policy_document" "ci_apply" {
 
   statement {
     sid     = "ServiciosDelHub" # todo, pero solo sobre lo que se llama refhub-*
-    actions = ["lambda:*", "logs:*", "states:*", "scheduler:*", "glue:*", "athena:*", "budgets:*", "codebuild:*"]
+    actions = ["lambda:*", "logs:*", "states:*", "scheduler:*", "glue:*", "athena:*", "budgets:*", "codebuild:*", "sns:*", "cloudwatch:*"]
     resources = [
       "arn:aws:lambda:${local.region}:${local.account_id}:function:refhub-*",
       "arn:aws:logs:${local.region}:${local.account_id}:log-group:/aws/lambda/refhub-*",
@@ -211,6 +211,8 @@ data "aws_iam_policy_document" "ci_apply" {
       "arn:aws:athena:${local.region}:${local.account_id}:workgroup/refhub-*",
       "arn:aws:budgets::${local.account_id}:budget/refhub-*",
       "arn:aws:codebuild:${local.region}:${local.account_id}:project/refhub-*",
+      "arn:aws:sns:${local.region}:${local.account_id}:refhub-*",              # el tema de alertas (6B)
+      "arn:aws:cloudwatch:${local.region}:${local.account_id}:alarm:refhub-*", # y sus alarmas
     ]
   }
 
