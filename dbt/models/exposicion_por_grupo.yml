@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: exposicion_por_grupo
+    description: >
+      Una fila por grupo económico con préstamos en la cartera sintética: cuánto suma el grupo,
+      en cuántas empresas y préstamos, y el préstamo más grande (ADR 0013). LOS MONTOS SON
+      INVENTADOS: las cifras no son un hallazgo ni la exposición de ningún banco.
+    columns:
+      - name: controlante_final_lei
+        data_type: varchar
+        description: LEI de la cabeza del grupo. Una fila por grupo.
+        data_tests: [unique, not_null]
+      - name: controlante_final_nombre
+        data_type: varchar
+        description: Nombre legal de la cabeza del grupo en GLEIF.
+      - name: monto_total_usd
+        data_type: decimal(18,2)
+        description: Suma de los préstamos a todas las empresas del grupo (USD, inventados).
+        data_tests: [not_null]
+      - name: empresas_con_prestamos
+        data_type: bigint
+        description: Cuántas empresas distintas del grupo tienen préstamos.
+        data_tests: [not_null]
+      - name: prestamos
+        data_type: bigint
+        description: Cuántos préstamos tiene el grupo.
+        data_tests: [not_null]
+      - name: prestamo_mayor_usd
+        data_type: decimal(18,2)
+        description: El préstamo individual más grande del grupo (USD, inventado).
+        data_tests: [not_null]
+      - name: cabeza_en_sec
+        data_type: boolean
+        description: La cabeza del grupo está en la golden copy de la SEC (gold.empresas).
+        data_tests: [not_null]
+
+unit_tests:
+  # Préstamos a dos subsidiarias y a la cabeza: todo suma a la controlante final.
+  - name: subsidiaria_suma_a_su_controlante_final
+    model: exposicion_por_grupo
+    given:
+      - input: ref('cartera_sintetica')
+        rows:
+          - { prestamo_id: P1, lei: LEI_HIJA_1, monto_usd: 3000000 }
+          - { prestamo_id: P2, lei: LEI_HIJA_2, monto_usd: 2000000 }
+          - { prestamo_id: P3, lei: LEI_HIJA_2, monto_usd: 1000000 }
+          - { prestamo_id: P4, lei: LEI_CABEZA, monto_usd: 4000000 }
+          - { prestamo_id: P5, lei: LEI_SUELTA, monto_usd: 5000000 }
+      - input: ref('grupos')
+        rows:
+          - { lei: LEI_HIJA_1, controlante_final_lei: LEI_CABEZA, controlante_final_nombre: Cabeza }
+          - { lei: LEI_HIJA_2, controlante_final_lei: LEI_CABEZA, controlante_final_nombre: Cabeza }
+          - { lei: LEI_CABEZA, controlante_final_lei: LEI_CABEZA, controlante_final_nombre: Cabeza }
+          - { lei: LEI_SUELTA, controlante_final_lei: LEI_SUELTA, controlante_final_nombre: Suelta }
+      - input: ref('empresas')
+        rows:
+          - { cik: "0000000001", lei: LEI_CABEZA }
+    expect:
+      rows:
+        # El préstamo más grande es el de la suelta (5 M), pero el grupo suma 10 M.
+        - controlante_final_lei: LEI_CABEZA
+          monto_total_usd: 10000000
+          empresas_con_prestamos: 3
+          prestamos: 4
+          prestamo_mayor_usd: 4000000
+          cabeza_en_sec: true
+        - controlante_final_lei: LEI_SUELTA
+          monto_total_usd: 5000000
+          empresas_con_prestamos: 1
+          prestamos: 1
+          prestamo_mayor_usd: 5000000
+          cabeza_en_sec: false

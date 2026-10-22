@@ -1,0 +1,35 @@
+version: 2
+
+seeds:
+  - name: cartera_sintetica
+    description: >
+      Cartera de préstamos SINTÉTICA, generada por generar_cartera.py con semilla fija: LEIs
+      reales de GLEIF con montos y productos INVENTADOS. No es la cartera de ningún banco y sus
+      cifras no se publican como hallazgos; existe para probar la exposición por grupo (ADR 0013).
+    config:
+      column_types:
+        prestamo_id: varchar
+        lei: varchar
+        monto_usd: decimal(18,2)
+        producto: varchar
+    columns:
+      - name: prestamo_id
+        description: Identificador inventado del préstamo (P0001, P0002...).
+        data_tests: [unique, not_null]
+      - name: lei
+        description: LEI real de la empresa a la que se le "prestó".
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: source('silver', 'gleif_lei')
+                field: lei
+      - name: monto_usd
+        description: Monto inventado, en USD.
+        data_tests: [not_null]
+      - name: producto
+        description: Tipo de préstamo, inventado.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [prestamo_comercial, linea_de_credito, leasing, comercio_exterior]
