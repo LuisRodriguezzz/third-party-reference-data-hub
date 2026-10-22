@@ -1,6 +1,6 @@
 # ADR 0008 · Golden copy: el cruce CIK↔LEI y gold con dbt
 
-- Estado: propuesto
+- Estado: aceptado
 - Fecha: 2026-10-21
 
 ## Contexto
@@ -103,10 +103,27 @@ La métrica de acierto es `gold.calidad_matching`, contra un gold set (`dbt/READ
   proporción está cerca de 1 y da margen cero si acierta todo; Wilson no. Con 100 casos el margen
   es de varios puntos: la cifra se publica con su intervalo, no sola.
 
-**Resultado (PENDIENTE):** medido el PENDIENTE sobre la corrida PENDIENTE. Precisión total
-PENDIENTE (IC 95 %: PENDIENTE a PENDIENTE), por códigos PENDIENTE y por nombre PENDIENTE. Recall
-PENDIENTE (IC 95 %: PENDIENTE a PENDIENTE). Casos `DUDA`: PENDIENTE. Auditoría: PENDIENTE de 10
-coinciden.
+**Resultado:** medido el 22-oct-2026 sobre la golden copy de la versión 0.14.0 (la de la corrida
+completa `prueba-completa-20261022T021256`). Gold set: 73 con LEI, 27 `SIN_LEI`, 0 `DUDA`.
+Precisión total **98,4 %** (62 de 63; IC 95 %: 91,5 % a 99,7 %), por códigos **100 %** (41 de 41;
+91,4 % a 100 %) y por nombre **95,5 %** (21 de 22; 78,2 % a 99,2 %). Recall **84,9 %** (62 de 73;
+75,0 % a 91,4 %). Ninguna empresa `SIN_LEI` recibió un LEI. Auditoría humana de 10: pendiente.
+
+Lo que enseñan los errores:
+
+- **El único LEI equivocado (Hydro One):** el camino por nombre eligió a la subsidiaria que emite
+  los bonos. El desempate "prefiere al emisor" falla cuando la deuda la emite una subsidiaria y no
+  la controlante que cotiza. Mejora posible: preferir al emisor de acciones, no de cualquier título.
+- **7 de los 10 no encontrados son el precio del filtro:** emisoras extranjeras que cotizan en
+  EE. UU. (seis de Canadá, una de Caimán) con el nombre normalizado idéntico, pero con un LEI que
+  no es de EE. UU. y sin títulos en ISIN↔LEI. Es la regla que impide que gane un homónimo
+  extranjero (Chevron frente a CHEVRON LIMITED de Malta): se eligió precisión sobre recall.
+  Mejora posible: aceptar un LEI extranjero cuando su jurisdicción coincide con el lugar de
+  constitución que publica la SEC (`data.sec.gov/submissions`).
+- **1:** el nombre legal en GLEIF está en japonés y el normalizado queda vacío; los nombres
+  transliterados de GLEIF (otros nombres), que silver todavía no trae, lo resolverían. **1:**
+  cambió de nombre y de domicilio. **1:** ya no está en la lista de la SEC de la que salió la
+  muestra (cuenta como no encontrado, como define el modelo).
 
 ## Consecuencias
 
