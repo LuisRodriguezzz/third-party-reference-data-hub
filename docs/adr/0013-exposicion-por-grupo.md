@@ -1,6 +1,6 @@
 # ADR 0013 · Exposición por grupo económico
 
-- Estado: propuesto
+- Estado: aceptado
 - Fecha: 2026-10-21
 
 ## Contexto

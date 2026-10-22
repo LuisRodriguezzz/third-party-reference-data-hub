@@ -1,6 +1,6 @@
 # ADR 0011 · dbt en el pipeline: CodeBuild llamado por Step Functions
 
-- Estado: propuesto
+- Estado: aceptado
 - Fecha: 2026-10-21
 
 ## Contexto
