@@ -1,6 +1,6 @@
 import pytest
 
-from refhub.isin import isin_problem
+from refhub.isin import is_us_equity, isin_problem
 
 
 @pytest.mark.parametrize(
@@ -31,3 +31,15 @@ def test_isin_validos(isin):
 )
 def test_isin_invalidos(isin, motivo):
     assert isin_problem(isin) == motivo
+
+
+@pytest.mark.parametrize(
+    ("isin", "es_accion"),
+    [
+        ("US0378331005", True),  # Apple, acción: emisión "10"
+        ("US037833DX52", False),  # Apple, un bono: emisión "DX", con letras
+        ("DE000BAY0017", False),  # Bayer: no es de EE. UU.
+    ],
+)
+def test_solo_acciones_de_eeuu(isin, es_accion):
+    assert is_us_equity(isin) is es_accion

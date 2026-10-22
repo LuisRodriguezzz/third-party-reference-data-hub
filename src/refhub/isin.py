@@ -27,3 +27,15 @@ def isin_problem(value: str | None) -> str | None:
     if total % 10 != 0:
         return "digito_verificador"
     return None
+
+
+def is_us_equity(isin: str) -> bool:
+    """¿Es una acción de EE. UU.? Sirve para no preguntarle a OpenFIGI por bonos.
+
+    Un ISIN de EE. UU. es "US" + el CUSIP (9 caracteres) + el verificador. En el CUSIP, los
+    caracteres 7 y 8 (las posiciones 9 y 10 del ISIN) son el número de emisión: por convención,
+    de 10 a 88 son acciones; con letras, deuda (bonos, pagarés). Así, Apple US0378331005 tiene
+    "10" (acción) y su bono US037833DX52 tiene "DX".
+    """
+    issue = isin[8:10]
+    return isin.startswith("US") and issue.isdigit() and 10 <= int(issue) <= 88
