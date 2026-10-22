@@ -329,12 +329,14 @@ resource "aws_sfn_state_machine" "pipeline" {
         Next       = "MantenerSilver"
       }
 
-      # Una iteración por tabla, de a una (MaxConcurrency = 1): son consultas cortas y así no
-      # compiten por el límite de consultas simultáneas de Athena.
+      # Una iteración por tabla, de a cinco. Cada consulta tarda segundos, pero Step Functions
+      # espera cerca de un minuto por cada paso de Athena: de a una, las 10 tablas se llevaban
+      # 21 de los 32 minutos de la primera corrida completa. Cinco a la vez queda lejos del límite
+      # de consultas simultáneas de Athena y son tablas distintas, así que no chocan entre sí.
       MantenerSilver = {
         Type           = "Map"
         ItemsPath      = "$.mantenimiento"
-        MaxConcurrency = 1
+        MaxConcurrency = 5
         ResultPath     = null # lo que devuelve cada consulta no sirve: la salida queda como venía
         ItemProcessor = {
           ProcessorConfig = { Mode = "INLINE" }
