@@ -35,6 +35,14 @@ jobs:
       - name: Tests
         run: uv run pytest
 
+      - name: dbt parse
+        # Valida el proyecto dbt sin conectarse a AWS (sintaxis, refs, fuentes repetidas):
+        # un error acá rompía recién el paso de CodeBuild del pipeline, ya en AWS.
+        working-directory: dbt
+        env:
+          REFHUB_DATA_BUCKET: ci-sin-conexion # profiles.yml la pide; parse no la usa
+        run: uv run dbt parse --profiles-dir .
+
   terraform-plan:
     # En cada pull request: muestra qué cambiaría en AWS, sin cambiar nada.
     if: github.event_name == 'pull_request'
