@@ -10,7 +10,9 @@ las de `refhub_gold_dev` como Iceberg, en `s3://<bucket de datos>/gold/<tabla>/<
 | `empresas` | una fila por CIK con el LEI elegido, el camino, `conflicto` y `ambiguo` |
 | `identificadores` | una fila por (cik, esquema, valor): CIK, LEI, ISIN, FIGI y TICKER |
 
-Por ahora dbt corre desde tu máquina, con tus credenciales de AWS; correrlo en AWS es del hito 6.
+En AWS, dbt corre como último paso del pipeline, en CodeBuild (`buildspec.yml`, ADR 0011; cómo
+correrlo suelto: `infra/terraform/README.md`, "Gold en CodeBuild"). Desde tu máquina se corre
+igual, con tus credenciales de AWS, para probar un cambio antes del PR.
 
 ## Requisitos
 
