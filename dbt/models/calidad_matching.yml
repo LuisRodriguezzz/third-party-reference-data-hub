@@ -1,0 +1,196 @@
+version: 2
+
+models:
+  - name: calidad_matching
+    description: >
+      La métrica del cruce CIK↔LEI contra el gold set (5F, ADR 0008): precisión y recall con su
+      intervalo de Wilson del 95 % y los conteos que explican cada cifra. Una fila por segmento:
+      codigos, nombre y total. Los casos DUDA no entran en las cifras y se cuentan aparte.
+    columns:
+      - name: segmento
+        data_type: varchar
+        description: >
+          codigos o nombre (los CIK del gold set que el cruce resolvió, o dejó ambiguos, por ese
+          camino) o total (todo el gold set, incluidos los que no tuvieron ningún candidato).
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [codigos, nombre, total]
+      - name: casos
+        data_type: bigint
+        description: CIK del gold set en el segmento, incluidos los DUDA.
+        data_tests: [not_null]
+      - name: duda
+        data_type: bigint
+        description: Casos que quien etiquetó no pudo decidir. No entran en ninguna otra columna.
+        data_tests: [not_null]
+      - name: asignados
+        data_type: bigint
+        description: Casos a los que el cruce les asignó un LEI. Denominador de la precisión.
+        data_tests: [not_null]
+      - name: correctos
+        data_type: bigint
+        description: Casos con el LEI correcto. Numerador de la precisión y del recall.
+        data_tests: [not_null]
+      - name: lei_equivocado
+        data_type: bigint
+        description: La empresa tiene LEI y el cruce le asignó otro.
+        data_tests: [not_null]
+      - name: asignados_sin_lei
+        data_type: bigint
+        description: La empresa no tiene LEI (SIN_LEI) y el cruce le asignó uno. Falso positivo.
+        data_tests: [not_null]
+      - name: con_lei_real
+        data_type: bigint
+        description: Casos cuya empresa tiene LEI de verdad. En total, el denominador del recall.
+        data_tests: [not_null]
+      - name: no_encontrados
+        data_type: bigint
+        description: La empresa tiene LEI y el cruce la dejó sin ninguno (sin candidatos o ambigua).
+        data_tests: [not_null]
+      - name: ambiguos
+        data_type: bigint
+        description: Casos que el cruce dejó sin LEI porque había candidatos empatados.
+        data_tests: [not_null]
+      - name: auditados
+        data_type: bigint
+        description: Casos cuya respuesta revisó una persona.
+        data_tests: [not_null]
+      - name: auditoria_coincide
+        data_type: bigint
+        description: Casos auditados en los que la persona llegó a la misma respuesta que el agente.
+        data_tests: [not_null]
+      - name: precision_puntual
+        data_type: double
+        description: correctos / asignados, de 0 a 1. Nulo si no hay asignados.
+      - name: precision_desde
+        data_type: double
+        description: Límite inferior del intervalo de Wilson del 95 % de la precisión.
+      - name: precision_hasta
+        data_type: double
+        description: Límite superior del intervalo de Wilson del 95 % de la precisión.
+      - name: recall_puntual
+        data_type: double
+        description: correctos / con_lei_real, de 0 a 1. Solo en total; nulo en cada camino.
+      - name: recall_desde
+        data_type: double
+        description: Límite inferior del intervalo de Wilson del 95 % del recall. Solo en total.
+      - name: recall_hasta
+        data_type: double
+        description: Límite superior del intervalo de Wilson del 95 % del recall. Solo en total.
+
+# Las reglas de la métrica, con casos inventados. Cada test muestra las tres filas (codigos,
+# nombre, total) con las columnas que hacen a la regla.
+unit_tests:
+  - name: un_lei_equivocado_cuenta_en_contra_de_la_precision
+    model: calidad_matching
+    given:
+      - input: ref('gold_set')
+        rows:
+          - { cik: "1", lei_correcto: LEI_BIEN_1 }
+          - { cik: "2", lei_correcto: LEI_BIEN_2 }
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: LEI_BIEN_1, camino: codigos, ambiguo: false }
+          - { cik: "2", lei: LEI_OTRO, camino: codigos, ambiguo: false }
+    expect:
+      rows:
+        - { segmento: codigos, asignados: 2, correctos: 1, lei_equivocado: 1, precision_puntual: 0.5 }
+        - { segmento: nombre, asignados: 0, correctos: 0, lei_equivocado: 0, precision_puntual: null }
+        - { segmento: total, asignados: 2, correctos: 1, lei_equivocado: 1, precision_puntual: 0.5 }
+
+  # El caso Chevron: la empresa no tiene LEI y el cruce le dio uno. No es "no aplica": es un
+  # error. La otra SIN_LEI quedó sin LEI, que es lo correcto, y no suma en ningún lado.
+  - name: asignar_un_lei_a_una_empresa_sin_lei_es_un_falso_positivo
+    model: calidad_matching
+    given:
+      - input: ref('gold_set')
+        rows:
+          - { cik: "1", lei_correcto: LEI_BIEN_1 }
+          - { cik: "2", lei_correcto: SIN_LEI }
+          - { cik: "3", lei_correcto: SIN_LEI }
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: LEI_BIEN_1, camino: nombre, ambiguo: false }
+          - { cik: "2", lei: LEI_HOMONIMO, camino: nombre, ambiguo: false }
+          - { cik: "3", lei: null, camino: null, ambiguo: false }
+    expect:
+      rows:
+        - { segmento: codigos, asignados: 0, correctos: 0, asignados_sin_lei: 0, precision_puntual: null }
+        - { segmento: nombre, asignados: 2, correctos: 1, asignados_sin_lei: 1, precision_puntual: 0.5 }
+        - { segmento: total, asignados: 2, correctos: 1, asignados_sin_lei: 1, precision_puntual: 0.5 }
+
+  # El DUDA tiene un LEI asignado que podría estar bien o mal: no se sabe, así que no cuenta.
+  - name: un_caso_duda_no_entra_en_las_cifras
+    model: calidad_matching
+    given:
+      - input: ref('gold_set')
+        rows:
+          - { cik: "1", lei_correcto: LEI_BIEN_1 }
+          - { cik: "2", lei_correcto: DUDA }
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: LEI_BIEN_1, camino: codigos, ambiguo: false }
+          - { cik: "2", lei: LEI_QUIEN_SABE, camino: codigos, ambiguo: false }
+    expect:
+      rows:
+        - { segmento: codigos, casos: 2, duda: 1, asignados: 1, con_lei_real: 1, precision_puntual: 1.0, recall_puntual: null }
+        - { segmento: nombre, casos: 0, duda: 0, asignados: 0, con_lei_real: 0, precision_puntual: null, recall_puntual: null }
+        - { segmento: total, casos: 2, duda: 1, asignados: 1, con_lei_real: 1, precision_puntual: 1.0, recall_puntual: 1.0 }
+
+  # A una SIN_LEI no hay nada que encontrarle: no está en el denominador del recall. La que tiene
+  # LEI y no tuvo candidatos sí está (y no tiene camino: solo aparece en total).
+  - name: el_denominador_del_recall_excluye_las_sin_lei
+    model: calidad_matching
+    given:
+      - input: ref('gold_set')
+        rows:
+          - { cik: "1", lei_correcto: LEI_BIEN_1 }
+          - { cik: "2", lei_correcto: SIN_LEI }
+          - { cik: "3", lei_correcto: LEI_BIEN_3 }
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: LEI_BIEN_1, camino: codigos, ambiguo: false }
+          - { cik: "2", lei: null, camino: null, ambiguo: false }
+          - { cik: "3", lei: null, camino: null, ambiguo: false }
+    expect:
+      rows:
+        - { segmento: codigos, con_lei_real: 1, no_encontrados: 0, recall_puntual: null }
+        - { segmento: nombre, con_lei_real: 0, no_encontrados: 0, recall_puntual: null }
+        - { segmento: total, con_lei_real: 2, no_encontrados: 1, recall_puntual: 0.5 }
+
+  # 9 de 10: la cifra es 0,9, pero con 10 casos lo honesto es "entre 0,60 y 0,98".
+  - name: el_intervalo_de_wilson_de_9_de_10
+    model: calidad_matching
+    given:
+      - input: ref('gold_set')
+        rows:
+          - { cik: "1", lei_correcto: L1 }
+          - { cik: "2", lei_correcto: L2 }
+          - { cik: "3", lei_correcto: L3 }
+          - { cik: "4", lei_correcto: L4 }
+          - { cik: "5", lei_correcto: L5 }
+          - { cik: "6", lei_correcto: L6 }
+          - { cik: "7", lei_correcto: L7 }
+          - { cik: "8", lei_correcto: L8 }
+          - { cik: "9", lei_correcto: L9 }
+          - { cik: "10", lei_correcto: L10 }
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: L1, camino: codigos, ambiguo: false }
+          - { cik: "2", lei: L2, camino: codigos, ambiguo: false }
+          - { cik: "3", lei: L3, camino: codigos, ambiguo: false }
+          - { cik: "4", lei: L4, camino: codigos, ambiguo: false }
+          - { cik: "5", lei: L5, camino: codigos, ambiguo: false }
+          - { cik: "6", lei: L6, camino: codigos, ambiguo: false }
+          - { cik: "7", lei: L7, camino: codigos, ambiguo: false }
+          - { cik: "8", lei: L8, camino: codigos, ambiguo: false }
+          - { cik: "9", lei: L9, camino: codigos, ambiguo: false }
+          - { cik: "10", lei: OTRO, camino: codigos, ambiguo: false }
+    expect:
+      rows:
+        - { segmento: codigos, precision_puntual: 0.9, precision_desde: 0.5958, precision_hasta: 0.9821, recall_desde: null, recall_hasta: null }
+        - { segmento: nombre, precision_puntual: null, precision_desde: null, precision_hasta: null, recall_desde: null, recall_hasta: null }
+        - { segmento: total, precision_puntual: 0.9, precision_desde: 0.5958, precision_hasta: 0.9821, recall_desde: 0.5958, recall_hasta: 0.9821 }

@@ -1,0 +1,42 @@
+version: 2
+
+seeds:
+  - name: gold_set
+    description: >
+      La respuesta correcta del cruce CIK↔LEI para 100 CIK de la SEC elegidos al azar (5F,
+      ADR 0008). La etiquetó un agente de IA a ciegas (sin ver lo que eligió el cruce) y una
+      persona auditó 10 casos al azar. Lo arma preparar_gold_set.py desde la planilla etiquetada,
+      que es donde queda la evidencia de cada respuesta.
+    columns:
+      - name: cik
+        description: CIK de la SEC, 10 dígitos con ceros adelante.
+        data_tests:
+          - unique
+          - not_null
+          # Si la SEC dejó de publicar un CIK de la muestra, la métrica lo contaría como "no
+          # encontrado" sin que sea culpa del cruce. Avisa, pero no frena la corrida.
+          - relationships:
+              arguments:
+                to: ref('empresas')
+                field: cik
+              config:
+                severity: warn
+      - name: lei_correcto
+        description: >
+          La respuesta: el LEI de la empresa (20 caracteres), SIN_LEI si la empresa no tiene LEI,
+          o DUDA si no se pudo decidir.
+        data_tests: [not_null]
+      - name: confianza
+        description: Qué tan seguro quedó quien etiquetó, tal cual lo anotó en la planilla.
+      - name: etiquetado_por
+        description: Quién etiquetó (agente_ia).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [agente_ia]
+      - name: auditado
+        description: Una persona revisó esta respuesta.
+        data_tests: [not_null]
+      - name: auditoria_coincide
+        description: Si se auditó, si la persona llegó a la misma respuesta. Nulo si no se auditó.

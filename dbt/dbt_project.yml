@@ -22,3 +22,17 @@ models:
     # El contrato (columnas y tipos en el YAML de cada modelo) se hace cumplir en todos.
     +contract:
       enforced: true
+
+seeds:
+  refhub:
+    # El gold set del 5F (seeds/gold_set.csv, lo arma preparar_gold_set.py). Los tipos van fijos:
+    # si dbt los adivina, el CIK "0000320193" se vuelve el número 320193 y ya no cruza con
+    # gold.empresas; y con el CSV todavía vacío no tendría de dónde adivinarlos.
+    gold_set:
+      +column_types:
+        cik: varchar
+        lei_correcto: varchar
+        confianza: varchar
+        etiquetado_por: varchar
+        auditado: boolean
+        auditoria_coincide: boolean
