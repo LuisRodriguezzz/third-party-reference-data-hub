@@ -1,6 +1,6 @@
 [project]
 name = "refhub"
-version = "0.9.0"
+version = "0.10.0"
 description = "Hub de datos de referencia de terceros: golden copy de empresas e instrumentos (GLEIF, OpenFIGI, SEC EDGAR) con catálogo de datasets y licencias legibles por máquina (DCAT y ODRL)."
 readme = "README.md"
 authors = [
@@ -9,8 +9,9 @@ authors = [
 requires-python = ">=3.11,<3.13"
 dependencies = []
 
-# La dependencia va donde se usa. rdflib solo la necesita el evaluador de licencias (y la futura
-# Lambda de la API, que la empaqueta): los jobs de Glue instalan el .whl sin extras y no la bajan.
+# La dependencia va donde se usa. rdflib solo la necesita el evaluador de licencias, que corre en
+# el CI para compilar decisiones.json (ADR 0012): ni los jobs de Glue ni la Lambda de la API la
+# instalan.
 [project.optional-dependencies]
 licencias = ["rdflib>=7.6"]
 

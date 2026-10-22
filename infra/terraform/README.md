@@ -246,10 +246,95 @@ valores, después se corre un full refresh. Renombrar, cambiar un tipo o borrar 
 dos pasos (expand/contract).
 Detalle: [ADR 0007](../../docs/adr/0007-evolucion-de-esquema-y-reprocesos.md).
 
+## API de permisos
+
+La Lambda `refhub-permisos-dev` responde **¿esta aplicación puede usar este dataset para este
+propósito?** No evalúa las políticas: busca la respuesta en `decisiones.json`, la tabla que el
+CI compila de `src/refhub/catalogo/*.ttl` y publica con cada versión (ADR 0012). Se llama de dos
+maneras, y las dos responden lo mismo.
+
+El pedido, en un archivo (PowerShell 5.1 les saca las comillas a los argumentos, ver arriba):
+
+```powershell
+'{"app": "motor_trading", "dataset": "precios_ficticios", "proposito": "trading_algoritmico"}' | Out-File -Encoding ascii pedido.json
+```
+
+Los nombres son los de `aplicaciones.ttl` y `catalogo.ttl`, sin el prefijo: aplicaciones
+`riesgo_corporativo`, `monitor_mercado`, `portal_clientes`, `motor_trading`; datasets como
+`gleif_lei`, `sec_empresas`, `precios_ficticios`, `gold_empresas`; propósitos como
+`riesgo_credito`, `display_interno`, `trading_algoritmico`, `publicacion_externa`.
+
+**1. Con `aws lambda invoke`** (necesita `lambda:InvokeFunction` sobre la función):
+
+```powershell
+aws lambda invoke --function-name refhub-permisos-dev --payload fileb://pedido.json salida.json
+Get-Content salida.json
+```
+
+**2. Por la Function URL, con un pedido firmado.** La URL es privada (`AuthType = AWS_IAM`): un
+pedido sin firma SigV4 recibe 403. Quien llama necesita `lambda:InvokeFunctionUrl` (y, en las
+URLs creadas desde fines de 2025, también `lambda:InvokeFunction`); un administrador de la
+cuenta ya los tiene. `curl.exe`, que viene con Windows, firma solo:
+
+```powershell
+$url = terraform output -raw permisos_url
+aws configure export-credentials --format powershell | Invoke-Expression   # tus credenciales en variables de entorno
+curl.exe -s --aws-sigv4 "aws:amz:us-east-1:lambda" `
+  --user "$($env:AWS_ACCESS_KEY_ID):$($env:AWS_SECRET_ACCESS_KEY)" `
+  -H "x-amz-security-token: $env:AWS_SESSION_TOKEN" `
+  -H "content-type: application/json" --data "@pedido.json" $url
+```
+
+Con claves de larga duración (sin `AWS_SESSION_TOKEN`) se saca la línea del `x-amz-security-token`.
+
+**Qué tiene que responder.** El proveedor ficticio le niega el trading algorítmico al motor:
+
+```json
+{"permitido": false, "motivo": "prohibicion",
+ "regla": "https://refhub.example.org/politica/ficticio_prohibe_non_display",
+ "obligaciones": [], "decidido_en": "precios_ficticios", "version_politicas": "<versión>"}
+```
+
+La golden copy se puede usar para riesgo de crédito, citando a la SEC (porque está hecha con sus
+datos). Pedido: `{"app": "riesgo_corporativo", "dataset": "gold_empresas", "proposito":
+"riesgo_credito"}`.
+
+```json
+{"permitido": true, "motivo": "permiso",
+ "regla": "https://refhub.example.org/politica/producto_hub_cualquier_uso",
+ "obligaciones": ["https://refhub.example.org/politica/sec_citar_la_fuente"],
+ "decidido_en": "gold_empresas", "version_politicas": "<versión>"}
+```
+
+Por `aws lambda invoke` la respuesta llega envuelta (`{"statusCode": 200, "body": "..."}`); por
+la URL llega el cuerpo solo. Un nombre que no existe o un campo que falta no es un "no": es un
+400 con `{"error": "app desconocido: 'x'"}`.
+
+**El registro de consumo.** Cada decisión deja una línea JSON en
+`/aws/lambda/refhub-permisos-dev` (14 días): `request_id`, `llamante` (el ARN IAM que firmó el
+pedido; `null` con `aws lambda invoke`, que queda en CloudTrail), el pedido, el estado y la
+respuesta.
+
+```powershell
+aws logs tail /aws/lambda/refhub-permisos-dev --since 1h --filter-pattern decision_de_permiso
+```
+
+Para preguntas de auditoría, Logs Insights sobre ese log group (desde la consola):
+
+```
+fields @timestamp, llamante, pedido.app, pedido.dataset, pedido.proposito, respuesta.permitido
+| filter evento = "decision_de_permiso" and pedido.dataset = "precios_ficticios"
+| sort @timestamp desc
+```
+
+Cambiar una política: editar el `.ttl`, subir la versión y abrir un PR. Al mergear, el CI
+compila y publica la tabla nueva junto al código, y el apply apunta la Lambda a esa versión.
+
 ## Versiones del código
 
 La Lambda y los jobs usan el código de `artifacts/refhub/<versión>/` del bucket de datos: el
-`.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre) y `glue/*.py`. Lo publica el CI al
+`.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre), `glue/*.py` y `decisiones.json`
+(las políticas compiladas, que sirve la API de permisos). Lo publica el CI al
 mergear, antes del apply, y **no pisa una versión ya publicada**.
 
 Versión nueva: cambiar `src/` o `glue/`, `uv version 0.3.1` y `refhub_version = "0.3.1"` en
