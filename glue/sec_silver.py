@@ -12,7 +12,6 @@ Python común, sin UDF. Spark está para escribir las tablas Iceberg.
 import sys
 from collections import Counter
 from importlib.metadata import version
-from importlib.resources import files
 
 import boto3
 from awsglue.utils import getResolvedOptions
@@ -22,13 +21,12 @@ from pyspark.sql import functions as F
 from refhub.bronze import file_name
 from refhub.contract import sec_problem
 from refhub.names import normalize_name
+from refhub.silver import already_in_silver, create_tables, full_refresh_flag, latest_landing_key
 from refhub.sources.sec import parse, publish_date
 
 # FULL_REFRESH tiene default "false" en Terraform: Step Functions llama sin argumentos.
 args = getResolvedOptions(sys.argv, ["DATA_BUCKET", "SILVER_DB", "FULL_REFRESH"])
-if args["FULL_REFRESH"] not in ("true", "false"):  # un "True" o un "si" no pasa en silencio
-    raise ValueError(f"--FULL_REFRESH tiene que ser true o false, no {args['FULL_REFRESH']!r}")
-full_refresh = args["FULL_REFRESH"] == "true"
+full_refresh = full_refresh_flag(args["FULL_REFRESH"])
 bucket = args["DATA_BUCKET"]
 silver_db = f"glue_catalog.{args['SILVER_DB']}"
 table = f"{silver_db}.sec_empresas"
@@ -38,22 +36,6 @@ spark = SparkSession.builder.getOrCreate()
 print(f"refhub {version('refhub')}")  # qué versión del paquete instaló Glue
 print(f"Modo: {'full refresh' if full_refresh else 'normal'}")
 s3 = boto3.client("s3")
-
-
-def create_tables():
-    """Las tablas, con su DDL (src/refhub/ddl/*.sql). Si ya existen, no las toca."""
-    for name in ["silver_sec_empresas", "silver_sec_empresas_cuarentena"]:
-        ddl = files("refhub").joinpath(f"ddl/{name}.sql").read_text(encoding="utf-8")
-        spark.sql(ddl.format(db=silver_db))
-
-
-def latest_key() -> str:
-    """El archivo más nuevo de landing: el nombre lleva fecha y hora, ordenar por nombre alcanza."""
-    pages = s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix="landing/sec/")
-    keys = [obj["Key"] for page in pages for obj in page.get("Contents", [])]
-    if not keys:
-        raise ValueError("No hay archivos de la SEC en landing: primero corré la Lambda")
-    return max(keys, key=file_name)
 
 
 def process(key: str):
@@ -113,10 +95,10 @@ def process(key: str):
     print(f"{name}: {len(rows)} filas, {len(rows) - rejected} a silver, {rejected} a cuarentena")
 
 
-create_tables()
-key = latest_key()
-current = spark.table(table).select("_archivo").limit(1).collect()
-if current and current[0]["_archivo"] == file_name(key) and not full_refresh:
+# Las tablas con su DDL (si ya existen, no se tocan), y el archivo más nuevo de landing.
+create_tables(spark, silver_db, ["silver_sec_empresas", "silver_sec_empresas_cuarentena"])
+key = latest_landing_key(s3, bucket, "landing/sec/")
+if already_in_silver(spark, table, file_name(key)) and not full_refresh:
     print(f"{file_name(key)} ya está en silver: no se escribe nada")
 else:
     process(key)

@@ -119,6 +119,15 @@ genérico, como estaba previsto:
 - **Decisión:** se sigue con DDL en SQL + reglas en Python. Los dos jobs de foto completa
   (ISIN↔LEI y SEC) quedan duplicados a propósito; si llega una tercera foto completa con el
   mismo patrón, se evalúa una función común en `refhub`.
+- **Hito 9, la tercera foto completa (`gleif_relaciones`):** llegó, con el mismo patrón. Se
+  sacaron a `refhub/silver.py` las cuatro cosas que eran idénticas en los tres jobs
+  (`full_refresh_flag`, `create_tables`, `latest_landing_key` y `already_in_silver`), como
+  funciones sueltas que reciben `spark` y `s3` por parámetro (sin clases y sin importar pyspark:
+  la Lambda importa `refhub`). Lo que cambia de una fuente a otra (cómo se lee, el contrato,
+  qué columnas se escriben) sigue en cada job, que se lee de arriba abajo. Criterio: la regla
+  del tercer caso; con tres copias, un arreglo en una (por ejemplo, el chequeo de
+  `--FULL_REFRESH`) había que acordarse de repetirlo en las otras dos. Un motor genérico sigue
+  sin convenir: las tres fuentes se leen distinto (CSV en Spark, JSON y CSV en el driver).
 - **Migraciones** (reemplazada por el ADR 0007: sin pasos a mano; el job agrega las columnas
   nuevas y `--FULL_REFRESH` recalcula): el primer cambio a una tabla con datos
   (`nombre_normalizado` en `gleif_lei`) va como `migraciones/0001_*.sql`, numerado y en el

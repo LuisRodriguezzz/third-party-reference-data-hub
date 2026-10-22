@@ -156,8 +156,11 @@ delta `LastWeek` o buscar las publicaciones viejas en
 `https://goldencopy.gleif.org/api/v2/golden-copies/publishes`.
 
 La misma Lambda baja las otras fuentes según el evento: `{"fuente": "gleif_isin_lei"}` (el
-archivo ISIN↔LEI, una foto completa por día) o `{"fuente": "sec"}` (las empresas de la SEC; usa
-`alert_email` como contacto, porque la SEC lo exige). Sin evento, baja el delta de GLEIF. A mano:
+archivo ISIN↔LEI, una foto completa por día), `{"fuente": "gleif_rr"}` (las relaciones entre
+empresas de GLEIF, nivel 2: el archivo completo de cada publicación, 23 MB, a
+`landing/gleif_rr/`) o `{"fuente": "sec"}` (las empresas de la SEC; usa `alert_email` como
+contacto, porque la SEC lo exige). Sin evento, baja el delta de GLEIF. Los archivos de ISIN↔LEI y
+de relaciones se borran de landing a los 30 días: silver guarda la última foto. A mano:
 
 ```powershell
 '{"fuente": "gleif_isin_lei"}' | Out-File -Encoding ascii evento.json
@@ -183,6 +186,9 @@ Seis jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 día
   `refhub_silver_dev.gleif_isin_lei` (foto completa, sin bronze).
 - `refhub-sec-dev`: el último archivo de la SEC de `landing/` reemplaza
   `refhub_silver_dev.sec_empresas` (foto completa, sin bronze).
+- `refhub-gleif-relaciones-dev`: el último archivo de relaciones de GLEIF (nivel 2) de
+  `landing/` reemplaza `refhub_silver_dev.gleif_relaciones` (foto completa, sin bronze). Todavía
+  no está en Step Functions: se corre a mano.
 - `refhub-openfigi-dev`: pregunta a la API de OpenFIGI por los ISIN de acciones de EE. UU. de
   `gleif_isin_lei` (unos 77 mil, de a 100 por pedido, unos 10 minutos) y reemplaza
   `refhub_silver_dev.openfigi_tickers` con su ticker y su FIGI. Las respuestas crudas quedan en
@@ -190,8 +196,8 @@ Seis jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 día
   la API en SSM (`/refhub/openfigi_api_key`, SecureString), que se crea a mano una vez:
   `aws ssm put-parameter --name /refhub/openfigi_api_key --type SecureString --value <clave>`.
 
-`refhub-gleif-isin-lei-dev` y `refhub-sec-dev` no hacen nada si el archivo más nuevo ya está en
-silver (salvo con full refresh, más abajo). `refhub-openfigi-dev` no tiene ese caso: cada corrida
+`refhub-gleif-isin-lei-dev`, `refhub-sec-dev` y `refhub-gleif-relaciones-dev` no hacen nada si
+el archivo más nuevo ya está en silver (salvo con full refresh, más abajo). `refhub-openfigi-dev` no tiene ese caso: cada corrida
 es una consulta nueva, así que siempre recalcula la tabla entera (y no acepta `--FULL_REFRESH`).
 Se corre como cualquier job suelto:
 
@@ -216,7 +222,7 @@ Consultas: Athena, workgroup `refhub-dev` (corta las consultas que leen más de 
 
 Recalcular una tabla de silver (full refresh): cuando cambia una regla (el contrato,
 `normalize_name`, qué versión gana) o una columna nueva necesita valores en las filas viejas.
-Los tres jobs de silver aceptan `--FULL_REFRESH true`: `refhub-gleif-silver-dev` procesa todos
+Los cuatro jobs de silver aceptan `--FULL_REFRESH true`: `refhub-gleif-silver-dev` procesa todos
 los archivos de bronze y reemplaza `gleif_lei` y el registro de archivos procesados enteros;
 los de foto completa vuelven a procesar el último archivo aunque ya esté en silver. Cada
 reemplazo es un solo commit. Borrar filas del registro **no** sirve: el `MERGE` solo pisa una
