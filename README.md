@@ -83,6 +83,14 @@ flowchart LR
     APP["Bank application"] -->|"SigV4-signed request"| API
     API --> LOG["Decision log<br/>CloudWatch Logs"]
   end
+
+  subgraph local["Local consumers: Podman on a laptop, outside AWS"]
+    EX["Export<br/>Athena query to CSV"] --> OS["OpenSearch 3.9<br/>counterparty search<br/>Elasticsearch-style Query DSL"]
+    EX --> OR[("Oracle Free<br/>risk aggregation<br/>CONNECT BY, ROLLUP")]
+  end
+
+  GD -.->|"golden copy, groups,<br/>synthetic loans"| EX
+  SV -.->|"GLEIF names and<br/>parent relationships"| EX
 ```
 
 - **Storage:** one S3 bucket with a prefix per layer; Iceberg tables in the Glue Data Catalog;
@@ -272,7 +280,7 @@ budget, 1 GB cap per Athena query, log retention, no NAT or VPC endpoints):
 | [0011](docs/adr/0011-dbt-en-el-pipeline.md) | dbt runs in CodeBuild, started by Step Functions; metrics, alarms and VACUUM in the same pipeline. *(proposed)* |
 | [0012](docs/adr/0012-api-de-permisos.md) | Permissions API: policies compiled in CI, a Lambda with an IAM Function URL, a decision log. |
 | [0013](docs/adr/0013-exposicion-por-grupo.md) | Exposure by economic group from the published ultimate parent; synthetic portfolio, declared. *(proposed)* |
-| [0014](docs/adr/0014-consumidores-locales.md) | Two local consumers in Podman (OpenSearch search, Oracle hierarchy queries), not managed services. *(proposed)* |
+| [0014](docs/adr/0014-consumidores-locales.md) | Two local consumers in Podman (OpenSearch search, Oracle hierarchy queries), not managed services. |
 
 Postmortems (blameless): [0001 · silver kept a version GLEIF no longer published](docs/postmortems/0001-version-que-gana.md)
 · [0002 · the documented reprocess did not recompute](docs/postmortems/0002-reproceso-que-no-recalculaba.md).

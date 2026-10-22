@@ -1,6 +1,6 @@
 # ADR 0014 · Dos consumidores locales de la golden copy
 
-- Estado: propuesto
+- Estado: aceptado
 - Fecha: 2026-10-22
 
 ## Contexto
