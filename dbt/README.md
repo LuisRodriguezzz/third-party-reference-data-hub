@@ -31,7 +31,9 @@ uv run --group dbt python dbt/seeds/generar_cartera.py
 `dbt build` la carga como tabla (`refhub_gold_dev.cartera_sintetica`, en Parquet: dbt-athena
 carga los seeds así, no como Iceberg) antes de los modelos que la usan.
 
-Por ahora dbt corre desde tu máquina, con tus credenciales de AWS; correrlo en AWS es del hito 6.
+En AWS, dbt corre como último paso del pipeline, en CodeBuild (`buildspec.yml`, ADR 0011; cómo
+correrlo suelto: `infra/terraform/README.md`, "Gold en CodeBuild"). Desde tu máquina se corre
+igual, con tus credenciales de AWS, para probar un cambio antes del PR.
 
 ## Requisitos
 

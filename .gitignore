@@ -22,3 +22,5 @@ dbt/target/
 dbt/logs/
 dbt/dbt_packages/
 dbt/.user.yml
+# lo arma el CI desde uv.lock al publicar (uv export): no se versiona dos veces
+dbt/requirements.txt

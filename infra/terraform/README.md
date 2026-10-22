@@ -4,7 +4,8 @@ Dos proyectos de Terraform:
 
 - `bootstrap/`: el bucket donde vive el state y los dos roles con los que el CI entra a AWS.
   Lo aplicás vos, desde tu máquina.
-- esta carpeta: el hub (bucket de datos, budget, Lambda, Step Functions y jobs de Glue). Guarda su
+- esta carpeta: el hub (bucket de datos, budget, Lambda, Step Functions, jobs de Glue y el
+  proyecto de CodeBuild de dbt). Guarda su
   state en el bucket de `bootstrap/` y **lo aplica el CI** al mergear a `main`.
 
 ## Requisitos
@@ -118,25 +119,43 @@ terraform import aws_iam_role_policy_attachment.ci_apply_lectura refhub-github-a
 terraform plan      # No changes
 ```
 
-## Ingesta de GLEIF
+## El pipeline
 
-La Lambda `refhub-gleif-ingest-dev` baja el último delta diario de GLEIF a
-`landing/gleif/dt=<fecha de publicación>/` del bucket de datos. La máquina de estados
-`refhub-gleif-ingest-dev` corre la Lambda (la reintenta si falla) y después los jobs de bronze y
-silver, uno detrás del otro (ver "Bronze y silver"). El schedule `refhub-gleif-diario-dev`
-(18:30 UTC) está creado pero **apagado**.
+La máquina de estados `refhub-pipeline-dev` (`orquestacion.tf`) corre todo, en este orden:
 
-Correrla a mano (desde esta carpeta):
+1. **Las fuentes, en paralelo**, cada una en su rama:
+   - GLEIF: la Lambda baja el delta del día → `refhub-gleif-bronze-dev` → `refhub-gleif-silver-dev`.
+   - ISIN↔LEI: la Lambda (`gleif_isin_lei`) → `refhub-gleif-isin-lei-dev` → `refhub-openfigi-dev`
+     (OpenFIGI va detrás porque pregunta por los ISIN de esa tabla).
+   - SEC: la Lambda (`sec`) → `refhub-sec-dev`.
+   - Relaciones de GLEIF: la Lambda (`gleif_rr`) → `refhub-gleif-relaciones-dev`.
+2. **Gold**: `dbt build` en el proyecto de CodeBuild `refhub-dbt-dev` (ver "Gold en CodeBuild").
+
+Cada paso espera a que el anterior termine (`.sync`). Los pasos de la Lambda se reintentan (es
+idempotente); los jobs y dbt no, porque cuestan: si uno falla, la ejecución falla, Step Functions
+frena las ramas que seguían corriendo y **gold no se arma**. Mirás el log, corregís y volvés a
+correr la ejecución entera: lo que ya estaba en landing o en silver no se vuelve a cargar.
+
+El schedule `refhub-pipeline-dev-diario` (18:30 UTC) está creado pero **apagado**. Una corrida
+completa cuesta unos 0,27 USD, casi todo Glue (ver el PR del hito 6A): todos los días son unos
+8 USD por mes, cerca del budget de 10.
+
+Correrlo a mano (desde esta carpeta):
 
 ```powershell
-$arn  = terraform output -raw gleif_state_machine_arn
+$arn  = terraform output -raw pipeline_state_machine_arn
 $exec = aws stepfunctions start-execution --state-machine-arn $arn --query executionArn --output text
 aws stepfunctions describe-execution --execution-arn $exec --query "[status,output]" --output text
 ```
 
-Si dice `RUNNING`, repetir la última línea unos segundos después. Tiene que terminar en
-`SUCCEEDED`, con `"status": "subido"` (archivo nuevo) o `"ya_existia"` (ya estaba), y con
-`"bronze"` y `"silver"` en `"estado": "SUCCEEDED"`.
+Tarda unos 15 minutos (la rama más larga es ISIN↔LEI + OpenFIGI, más dbt). Si dice `RUNNING`,
+repetir la última línea más tarde. Tiene que terminar en `SUCCEEDED`; en la salida, `fuentes`
+tiene una entrada por rama (lo que devolvió la Lambda, `"subido"` o `"ya_existia"`, y el estado de
+cada job) y `gold` el estado del build. Si falló, la consola de Step Functions muestra en qué paso
+(en rojo) y con qué error.
+
+La Lambda `refhub-gleif-ingest-dev` baja a `landing/` la fuente que dice el evento (ver abajo).
+Del delta de GLEIF guarda `landing/gleif/dt=<fecha de publicación>/`.
 
 Verificar que el archivo está una sola vez:
 
@@ -147,7 +166,7 @@ aws s3 ls s3://refhub-data-<cuenta>-dev/landing/gleif/ --recursive
 Varios archivos en el mismo `dt=` no son duplicados: GLEIF publica varias veces por día
 (`...-0800-...`, `...-1600-...`), cada uno con su nombre.
 
-Prender la corrida diaria: en `orquestacion_gleif.tf` cambiar `state = "DISABLED"` por
+Prender la corrida diaria: en `orquestacion.tf` cambiar `state = "DISABLED"` por
 `"ENABLED"` en una rama y abrir un PR: el plan tiene que mostrar un solo `~` sobre el schedule.
 
 Si el schedule estuvo apagado o falló más de un día, faltan publicaciones: cada delta
@@ -187,8 +206,7 @@ Seis jobs de Glue 5.1 (logs en `/aws-glue/refhub-dev/output` y `/error`, 14 día
 - `refhub-sec-dev`: el último archivo de la SEC de `landing/` reemplaza
   `refhub_silver_dev.sec_empresas` (foto completa, sin bronze).
 - `refhub-gleif-relaciones-dev`: el último archivo de relaciones de GLEIF (nivel 2) de
-  `landing/` reemplaza `refhub_silver_dev.gleif_relaciones` (foto completa, sin bronze). Todavía
-  no está en Step Functions: se corre a mano.
+  `landing/` reemplaza `refhub_silver_dev.gleif_relaciones` (foto completa, sin bronze).
 - `refhub-openfigi-dev`: pregunta a la API de OpenFIGI por los ISIN de acciones de EE. UU. de
   `gleif_isin_lei` (unos 77 mil, de a 100 por pedido, unos 10 minutos) y reemplaza
   `refhub_silver_dev.openfigi_tickers` con su ticker y su FIGI. Las respuestas crudas quedan en
@@ -236,6 +254,30 @@ aws glue start-job-run --job-name refhub-gleif-silver-dev --arguments file://arg
 El JSON va en un archivo porque PowerShell 5.1 les saca las comillas dobles a los argumentos de
 los programas externos: escrito en la línea, a la CLI le llega `{--FULL_REFRESH: true}` y falla.
 Sin `--arguments`, el job corre en su modo normal (el default `false` está en Terraform).
+
+## Gold en CodeBuild
+
+`refhub-dbt-dev` (`dbt.tf`) corre `dbt build` en una máquina de CodeBuild que se prende para
+eso y se apaga al terminar (ADR 0011). Baja el proyecto dbt que publicó el CI
+(`artifacts/refhub/<versión>/refhub-dbt.zip`, con `dbt/buildspec.yml` y un `requirements.txt` que
+sale de `uv.lock`), instala dbt con esas versiones exactas y corre los modelos y los tests contra
+Athena, en el workgroup `refhub-dev`. Tarda unos 4 minutos. Logs en
+`/aws/codebuild/refhub-dbt-dev` (14 días):
+
+```powershell
+aws logs tail /aws/codebuild/refhub-dbt-dev --since 1h
+```
+
+Correrlo suelto (por ejemplo, después de cambiar un modelo, sin volver a cargar silver):
+
+```powershell
+$build = aws codebuild start-build --project-name refhub-dbt-dev --query build.id --output text
+aws codebuild batch-get-builds --ids $build --query "builds[0].buildStatus" --output text
+```
+
+Un cambio en `dbt/` llega a AWS como el resto del código: con una versión nueva (ver "Versiones
+del código"). Mientras tanto, `dbt build` desde tu máquina sigue funcionando igual
+(`dbt/README.md`).
 
 ## Cambios de esquema
 
@@ -332,12 +374,13 @@ compila y publica la tabla nueva junto al código, y el apply apunta la Lambda a
 
 ## Versiones del código
 
-La Lambda y los jobs usan el código de `artifacts/refhub/<versión>/` del bucket de datos: el
-`.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre), `glue/*.py` y `decisiones.json`
-(las políticas compiladas, que sirve la API de permisos). Lo publica el CI al
+La Lambda, los jobs y CodeBuild usan el código de `artifacts/refhub/<versión>/` del bucket de
+datos: el `.whl`, `refhub-lambda.zip` (el mismo `.whl` con otro nombre), `glue/*.py`,
+`refhub-dbt.zip` (la carpeta `dbt/`) y `decisiones.json` (las políticas compiladas, que sirve
+la API de permisos). Lo publica el CI al
 mergear, antes del apply, y **no pisa una versión ya publicada**.
 
-Versión nueva: cambiar `src/` o `glue/`, `uv version 0.3.1` y `refhub_version = "0.3.1"` en
+Versión nueva: cambiar `src/`, `glue/` o `dbt/`, `uv version 0.3.1` y `refhub_version = "0.3.1"` en
 `variables.tf`, en el mismo PR. Si cambiás el código sin subir la versión, el CI avisa "ya
 existía y no se pisa" y en AWS sigue corriendo lo anterior.
 

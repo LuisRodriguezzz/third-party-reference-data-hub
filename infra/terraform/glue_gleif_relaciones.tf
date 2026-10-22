@@ -1,6 +1,6 @@
 # Relaciones de GLEIF (nivel 2): un job de Glue que lleva el último archivo completo de landing
 # a silver.gleif_relaciones, con su contrato y su cuarentena. Es una foto completa: no pasa por
-# bronze. Todavía no está en Step Functions: se corre a mano (la orquestación es del hito 6).
+# bronze. Lo corre el pipeline (orquestacion.tf), en su propia rama.
 
 # Sus permisos: los de glue_base más leer su carpeta de landing y escribir silver.
 data "aws_iam_policy_document" "glue_gleif_relaciones" {

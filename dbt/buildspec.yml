@@ -1,0 +1,18 @@
+# Cómo corre dbt en AWS CodeBuild (ADR 0011). CodeBuild baja el zip de este proyecto que publicó
+# el CI (artifacts/refhub/<versión>/refhub-dbt.zip) y sigue estos pasos desde esta carpeta.
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: "3.12" # la versión fija: sin esto, CodeBuild usa la que tenga la imagen por defecto
+    commands:
+      # requirements.txt lo arma el CI con `uv export` desde uv.lock: las mismas versiones (y los
+      # mismos hashes) que en tu máquina. --require-hashes hace que pip falle si un paquete de
+      # PyPI no es exactamente el que se probó.
+      - pip install --quiet --no-cache-dir --require-hashes -r requirements.txt
+  build:
+    commands:
+      # Si un modelo o un test falla, dbt sale con error, el build queda FAILED y Step Functions
+      # frena la ejecución.
+      - dbt build

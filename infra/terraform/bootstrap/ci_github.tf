@@ -182,6 +182,7 @@ data "aws_iam_policy_document" "ci_apply" {
       values = [
         "lambda.amazonaws.com", "glue.amazonaws.com",
         "states.amazonaws.com", "scheduler.amazonaws.com",
+        "codebuild.amazonaws.com", # el proyecto que corre dbt (hito 6, ADR 0011)
       ]
     }
   }
@@ -198,16 +199,18 @@ data "aws_iam_policy_document" "ci_apply" {
 
   statement {
     sid     = "ServiciosDelHub" # todo, pero solo sobre lo que se llama refhub-*
-    actions = ["lambda:*", "logs:*", "states:*", "scheduler:*", "glue:*", "athena:*", "budgets:*"]
+    actions = ["lambda:*", "logs:*", "states:*", "scheduler:*", "glue:*", "athena:*", "budgets:*", "codebuild:*"]
     resources = [
       "arn:aws:lambda:${local.region}:${local.account_id}:function:refhub-*",
       "arn:aws:logs:${local.region}:${local.account_id}:log-group:/aws/lambda/refhub-*",
       "arn:aws:logs:${local.region}:${local.account_id}:log-group:/aws-glue/refhub-*",
+      "arn:aws:logs:${local.region}:${local.account_id}:log-group:/aws/codebuild/refhub-*",
       "arn:aws:states:${local.region}:${local.account_id}:stateMachine:refhub-*",
       "arn:aws:scheduler:${local.region}:${local.account_id}:schedule/default/refhub-*",
       "arn:aws:glue:${local.region}:${local.account_id}:job/refhub-*",
       "arn:aws:athena:${local.region}:${local.account_id}:workgroup/refhub-*",
       "arn:aws:budgets::${local.account_id}:budget/refhub-*",
+      "arn:aws:codebuild:${local.region}:${local.account_id}:project/refhub-*",
     ]
   }
 

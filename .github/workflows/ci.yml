@@ -145,6 +145,15 @@ jobs:
           cp dist/refhub-*-py3-none-any.whl dist/refhub-lambda.zip # un .whl ya es un zip con refhub/
           ls -l dist/
 
+      - name: Armar el zip del proyecto dbt
+        # CodeBuild lo baja y corre dbt build (ADR 0011). requirements.txt sale de uv.lock (--locked:
+        # falla si el lock está desactualizado), con hashes: en AWS se instala exactamente lo
+        # mismo que en tu máquina.
+        run: |
+          uv export --only-group dbt --no-emit-project --locked -o dbt/requirements.txt
+          (cd dbt && zip -r ../dist/refhub-dbt.zip . -x 'target/*' 'logs/*' 'dbt_packages/*' '.user.yml')
+          unzip -l dist/refhub-dbt.zip
+
       - name: Compilar las políticas a la tabla de decisiones
         # Las políticas ODRL se evalúan acá, una vez por versión, y la API de permisos solo
         # busca en la tabla (ADR 0012). rdflib se instala en el runner, no en la Lambda.
@@ -169,7 +178,7 @@ jobs:
                 --if-none-match '*' > /dev/null 2> error.txt; then
               echo "Publicado: s3://$BUCKET/$2"
             elif grep -q PreconditionFailed error.txt; then
-              echo "::notice::$2 ya existía y no se pisa. Si cambiaste src/ o glue/, subí la versión."
+              echo "::notice::$2 ya existía y no se pisa. Si cambiaste src/, glue/ o dbt/, subí la versión."
             else
               cat error.txt
               exit 1
@@ -177,6 +186,7 @@ jobs:
           }
           publicar "dist/refhub-$VERSION-py3-none-any.whl" "$DESTINO/refhub-$VERSION-py3-none-any.whl"
           publicar dist/refhub-lambda.zip "$DESTINO/refhub-lambda.zip"
+          publicar dist/refhub-dbt.zip "$DESTINO/refhub-dbt.zip"
           publicar dist/decisiones.json "$DESTINO/decisiones.json"
           for SCRIPT in glue/*.py; do
             publicar "$SCRIPT" "$DESTINO/glue/$(basename "$SCRIPT")"
