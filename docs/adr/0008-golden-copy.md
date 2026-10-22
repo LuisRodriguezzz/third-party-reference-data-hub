@@ -107,7 +107,10 @@ La métrica de acierto es `gold.calidad_matching`, contra un gold set (`dbt/READ
 completa `prueba-completa-20261022T021256`). Gold set: 73 con LEI, 27 `SIN_LEI`, 0 `DUDA`.
 Precisión total **98,4 %** (62 de 63; IC 95 %: 91,5 % a 99,7 %), por códigos **100 %** (41 de 41;
 91,4 % a 100 %) y por nombre **95,5 %** (21 de 22; 78,2 % a 99,2 %). Recall **84,9 %** (62 de 73;
-75,0 % a 91,4 %). Ninguna empresa `SIN_LEI` recibió un LEI. Auditoría humana de 10: pendiente.
+75,0 % a 91,4 %). Ninguna empresa `SIN_LEI` recibió un LEI. Auditoría humana: Luis revisó 10 casos al azar
+(semilla fija) contra GLEIF y EDGAR y coincidió con el etiquetador en **10 de 10**. Con 10 casos,
+eso acota la coincidencia del etiquetador entre 72 % y 100 % (Wilson): sirve como control, no
+como garantía de que el etiquetador acierte siempre.
 
 Lo que enseñan los errores:
 

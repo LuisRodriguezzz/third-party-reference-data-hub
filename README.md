@@ -150,7 +150,8 @@ Coverage is not accuracy. Measured on 2026-10-22 against a **gold set of 100 SEC
 at random** (fixed seed) and labeled **blind**: the labeler never saw what the hub chose. The
 labeler was an AI agent working only from GLEIF's public API and SEC EDGAR, with the evidence for
 every row kept (same legal name or a former one, and matching jurisdiction or address; a parent
-or a subsidiary does not count). A person audits 10 random labels: *audit pending*. Result: 73
+or a subsidiary does not count). A person audited 10 random labels against GLEIF and EDGAR:
+**10 of 10 agreed** (with 10 cases, that puts the labeler's agreement at 72% – 100%). Result: 73
 companies have an LEI, 27 do not, 0 left undecided. Margins are 95% Wilson intervals.
 
 | Path | Assigned | Correct | Precision | 95% CI |
@@ -306,7 +307,7 @@ son hallazgos). Las licencias están en DCAT y ODRL, se compilan en el CI y una 
 si una aplicación puede usar un dataset para un propósito, con la regla y las obligaciones. Todo
 corre de punta a punta en un pipeline de Step Functions (medido el 21-oct: 31 min 38 s, unos
 0,21 USD), con infraestructura en Terraform aplicada por PR. Contra un
-gold set de 100 empresas al azar, etiquetado a ciegas, el cruce tiene **98,4 % de precisión** (62 de
+gold set de 100 empresas al azar, etiquetado a ciegas (una persona auditó 10: coincidieron los 10), el cruce tiene **98,4 % de precisión** (62 de
 63; IC 95 %: 91,5 % a 99,7 %) y **84,9 % de recall** (62 de 73; IC 95 %: 75,0 % a 91,4 %). Las
 decisiones están en `docs/adr/`, los costos en `docs/costos.md` y dos postmortems en
 `docs/postmortems/`.
