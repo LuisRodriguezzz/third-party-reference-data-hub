@@ -154,6 +154,11 @@ jobs:
           (cd dbt && zip -r ../dist/refhub-dbt.zip . -x 'target/*' 'logs/*' 'dbt_packages/*' '.user.yml')
           unzip -l dist/refhub-dbt.zip
 
+      - name: Compilar las políticas a la tabla de decisiones
+        # Las políticas ODRL se evalúan acá, una vez por versión, y la API de permisos solo
+        # busca en la tabla (ADR 0012). rdflib se instala en el runner, no en la Lambda.
+        run: uv run --no-dev --extra licencias python -m refhub.licencias dist/decisiones.json
+
       - name: Entrar a AWS con OIDC (rol de apply)
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -182,6 +187,7 @@ jobs:
           publicar "dist/refhub-$VERSION-py3-none-any.whl" "$DESTINO/refhub-$VERSION-py3-none-any.whl"
           publicar dist/refhub-lambda.zip "$DESTINO/refhub-lambda.zip"
           publicar dist/refhub-dbt.zip "$DESTINO/refhub-dbt.zip"
+          publicar dist/decisiones.json "$DESTINO/decisiones.json"
           for SCRIPT in glue/*.py; do
             publicar "$SCRIPT" "$DESTINO/glue/$(basename "$SCRIPT")"
           done

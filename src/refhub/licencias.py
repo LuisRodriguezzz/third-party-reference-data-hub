@@ -2,11 +2,15 @@
 
 El catálogo (DCAT), las políticas (ODRL) y las aplicaciones están en `refhub/catalogo/*.ttl`.
 `evaluar` responde una pregunta y dice con qué regla lo decidió; `compilar` responde todas de
-antemano, para que la API no tenga que evaluar en caliente (ADR 0009).
+antemano, para que la API no tenga que evaluar en caliente (ADR 0009 y 0012).
 
 Necesita el extra `licencias` (`pip install refhub[licencias]`), que trae rdflib. No es una
-dependencia obligatoria porque los jobs de Glue instalan el paquete y no usan este módulo; la
-futura Lambda de la API sí la va a empaquetar.
+dependencia obligatoria porque solo se usa al compilar, en el CI: ni los jobs de Glue ni la
+Lambda de la API (que lee la tabla ya compilada, `refhub.permisos`) la necesitan.
+
+Compilar la tabla que publica el CI y sirve la API:
+
+    uv run --no-dev --extra licencias python -m refhub.licencias dist/decisiones.json
 
 Semántica, cada punto con su criterio:
 
@@ -23,8 +27,12 @@ Semántica, cada punto con su criterio:
   tener más derechos que lo que lo originó.
 """
 
+import json
+import sys
 from dataclasses import dataclass
+from importlib.metadata import version
 from importlib.resources import files
+from pathlib import Path
 
 from rdflib import Graph, URIRef
 from rdflib.namespace import DCAT, ODRL2, PROV, SKOS
@@ -130,6 +138,38 @@ def compilar(grafo: Graph) -> list[tuple[URIRef, URIRef, URIRef, Decision]]:
     ]
 
 
+def tabla_de_decisiones(grafo: Graph, version_politicas: str) -> dict:
+    """La tabla compilada como JSON: lo que el CI publica y la API de permisos sirve (ADR 0012).
+
+    Lo que el cliente manda (aplicación, dataset, propósito) y el dataset donde se decidió van
+    por nombre corto (`motor_trading`), que es como los pide la API. La regla y las obligaciones
+    van con su IRI completo: es su identidad en ODRL y lleva a la política en el catálogo.
+    """
+    return {
+        # Las políticas viajan en el paquete, así que su versión es la del paquete: cada
+        # decisión dice de qué versión salió, y esa versión no se pisa en S3.
+        "version_politicas": version_politicas,
+        "decisiones": [
+            {
+                "app": _nombre(app),
+                "dataset": _nombre(dataset),
+                "proposito": _nombre(proposito),
+                "permitido": decision.permitido,
+                "motivo": decision.motivo,
+                "regla": str(decision.regla) if decision.regla else None,
+                "decidido_en": _nombre(decision.decidido_en),
+                "obligaciones": [str(o) for o in decision.obligaciones],
+            }
+            for app, dataset, proposito, decision in compilar(grafo)
+        ],
+    }
+
+
+def _nombre(iri: URIRef) -> str:
+    """`https://refhub.example.org/aplicacion/motor_trading` -> `motor_trading`."""
+    return str(iri).rsplit("/", 1)[1]
+
+
 def _reglas(
     grafo: Graph, dataset: URIRef, app: URIRef, incluido_en: set, es_fuente: bool
 ) -> list[tuple[URIRef, URIRef]]:
@@ -180,3 +220,13 @@ def _exigir(grafo: Graph, app: URIRef, dataset: URIRef, proposito: URIRef) -> No
 
 def _leer(nombre: str) -> str:
     return files("refhub").joinpath(f"catalogo/{nombre}").read_text(encoding="utf-8")
+
+
+if __name__ == "__main__":
+    # El CI lo corre al publicar una versión: las políticas se evalúan acá, una vez, y no en
+    # cada pedido a la API.
+    destino = Path(sys.argv[1])
+    tabla = tabla_de_decisiones(cargar(), version("refhub"))
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(tabla, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"{len(tabla['decisiones'])} decisiones -> {destino}")

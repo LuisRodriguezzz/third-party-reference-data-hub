@@ -41,3 +41,11 @@ output "glue_sec_job" {
 output "glue_gleif_relaciones_job" {
   value = module.glue_gleif_relaciones.job_name
 }
+
+output "permisos_lambda_name" {
+  value = aws_lambda_function.permisos.function_name
+}
+
+output "permisos_url" {
+  value = aws_lambda_function_url.permisos.function_url
+}

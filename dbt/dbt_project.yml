@@ -6,6 +6,8 @@ version: "1.0.0"
 profile: refhub
 
 model-paths: ["models"]
+# La cartera sintética (CSV versionado; ADR 0013). dbt solo carga los .csv de esta carpeta.
+seed-paths: ["seeds"]
 clean-targets: ["target", "logs"]
 
 models:

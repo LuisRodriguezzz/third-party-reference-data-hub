@@ -1,7 +1,8 @@
 # Gold con dbt (runbook)
 
-Los modelos de gold: la golden copy de empresas (ADR 0008). dbt lee las tablas de silver y crea
-las de `refhub_gold_dev` como Iceberg, en `s3://<bucket de datos>/gold/<tabla>/<id>`.
+Los modelos de gold: la golden copy de empresas (ADR 0008) y la exposición por grupo económico
+(ADR 0013). dbt lee las tablas de silver y crea las de `refhub_gold_dev` como Iceberg, en
+`s3://<bucket de datos>/gold/<tabla>/<id>`.
 
 | Modelo | Qué es |
 |---|---|
@@ -9,6 +10,26 @@ las de `refhub_gold_dev` como Iceberg, en `s3://<bucket de datos>/gold/<tabla>/<
 | `candidatos_nombre` | los LEIs posibles de cada CIK por nombre normalizado |
 | `empresas` | una fila por CIK con el LEI elegido, el camino, `conflicto` y `ambiguo` |
 | `identificadores` | una fila por (cik, esquema, valor): CIK, LEI, ISIN, FIGI y TICKER |
+| `grupos` | una fila por LEI con su controlante final (la cabeza de su grupo económico) |
+| `exposicion_por_grupo` | la suma de la cartera sintética por controlante final |
+
+## La cartera sintética (seed)
+
+`seeds/cartera_sintetica.csv` es una cartera de préstamos **inventada**: LEIs reales de GLEIF con
+montos, productos y préstamos **inventados**. No es la cartera de ningún banco, no lleva nombres,
+y **las cifras de exposición que salen de ella no son un hallazgo ni se publican como tales**.
+Existe para que `exposicion_por_grupo` tenga algo que sumar (ADR 0013).
+
+La genera `seeds/generar_cartera.py` con semilla fija, leyendo silver y gold en Athena (solo
+lectura). El CSV queda versionado: no cambia hasta que alguien vuelva a correr el script, y con
+la misma foto de GLEIF sale igual.
+
+```powershell
+uv run --group dbt python dbt/seeds/generar_cartera.py
+```
+
+`dbt build` la carga como tabla (`refhub_gold_dev.cartera_sintetica`, en Parquet: dbt-athena
+carga los seeds así, no como Iceberg) antes de los modelos que la usan.
 
 En AWS, dbt corre como último paso del pipeline, en CodeBuild (`buildspec.yml`, ADR 0011; cómo
 correrlo suelto: `infra/terraform/README.md`, "Gold en CodeBuild"). Desde tu máquina se corre

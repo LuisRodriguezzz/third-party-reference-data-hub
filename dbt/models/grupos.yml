@@ -1,0 +1,123 @@
+version: 2
+
+models:
+  - name: grupos
+    description: >
+      Una fila por LEI de GLEIF con su controlante final (la cabeza de su grupo económico), según
+      la relación IS_ULTIMATELY_CONSOLIDATED_BY activa. Qué relaciones cuentan: ADR 0013.
+    columns:
+      - name: lei
+        data_type: varchar
+        description: LEI de la empresa. Una fila por LEI.
+        data_tests: [unique, not_null]
+      - name: legal_name
+        data_type: varchar
+        description: Nombre legal del LEI en GLEIF.
+      - name: controlante_final_lei
+        data_type: varchar
+        description: LEI de la cabeza del grupo. Si no tiene controlante final, el mismo LEI.
+        data_tests: [not_null]
+      - name: controlante_final_nombre
+        data_type: varchar
+        description: Nombre legal de la cabeza del grupo. Nulo si su LEI no está en silver.
+      - name: es_cabeza
+        data_type: boolean
+        description: La empresa es la cabeza de su grupo (no tiene una controlante final que cuente).
+        data_tests: [not_null]
+      - name: registro_relacion
+        data_type: varchar
+        description: >
+          Estado del registro de la relación en GLEIF (PUBLISHED o LAPSED). Nulo si es cabeza.
+          LAPSED es que no se renovó: sirve para filtrar si se quiere ser más estricto.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [PUBLISHED, LAPSED]
+
+# Los tests de negocio de este paso: qué relación arma un grupo, con datos inventados.
+unit_tests:
+  - name: subsidiaria_apunta_a_su_controlante_final
+    model: grupos
+    given:
+      - input: source('silver', 'gleif_relaciones')
+        rows:
+          - child_lei: LEI_HIJA
+            parent_lei: LEI_CABEZA
+            relationship_type: IS_ULTIMATELY_CONSOLIDATED_BY
+            relationship_status: ACTIVE
+            registration_status: PUBLISHED
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_HIJA, legal_name: Hija SA }
+          - { lei: LEI_CABEZA, legal_name: Cabeza Holding }
+    expect:
+      rows:
+        - lei: LEI_HIJA
+          controlante_final_lei: LEI_CABEZA
+          controlante_final_nombre: Cabeza Holding
+          es_cabeza: false
+          registro_relacion: PUBLISHED
+        - lei: LEI_CABEZA
+          controlante_final_lei: LEI_CABEZA
+          controlante_final_nombre: Cabeza Holding
+          es_cabeza: true
+          registro_relacion: null
+
+  - name: empresa_sin_controlante_es_su_propio_grupo
+    model: grupos
+    given:
+      - input: source('silver', 'gleif_relaciones')
+        rows: []
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_SUELTA, legal_name: Suelta SRL }
+    expect:
+      rows:
+        - lei: LEI_SUELTA
+          controlante_final_lei: LEI_SUELTA
+          controlante_final_nombre: Suelta SRL
+          es_cabeza: true
+
+  # Inactiva o con fecha de fin pasada: ya no dice quién controla hoy.
+  - name: relacion_inactiva_o_vencida_no_cuenta
+    model: grupos
+    given:
+      - input: source('silver', 'gleif_relaciones')
+        rows:
+          - child_lei: LEI_INACTIVA
+            parent_lei: LEI_EX_CABEZA
+            relationship_type: IS_ULTIMATELY_CONSOLIDATED_BY
+            relationship_status: INACTIVE
+            registration_status: PUBLISHED
+          - child_lei: LEI_VENCIDA
+            parent_lei: LEI_EX_CABEZA
+            relationship_type: IS_ULTIMATELY_CONSOLIDATED_BY
+            relationship_status: ACTIVE
+            relationship_end: "2020-01-01 00:00:00"
+            registration_status: PUBLISHED
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_INACTIVA }
+          - { lei: LEI_VENCIDA }
+    expect:
+      rows:
+        - { lei: LEI_INACTIVA, controlante_final_lei: LEI_INACTIVA, es_cabeza: true }
+        - { lei: LEI_VENCIDA, controlante_final_lei: LEI_VENCIDA, es_cabeza: true }
+
+  # Una gestora no es dueña de los fondos que administra: el fondo no entra en su grupo.
+  - name: gestion_de_fondos_no_arma_grupo
+    model: grupos
+    given:
+      - input: source('silver', 'gleif_relaciones')
+        rows:
+          - child_lei: LEI_FONDO
+            parent_lei: LEI_GESTORA
+            relationship_type: IS_FUND-MANAGED_BY
+            relationship_status: ACTIVE
+            registration_status: PUBLISHED
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_FONDO }
+    expect:
+      rows:
+        - { lei: LEI_FONDO, controlante_final_lei: LEI_FONDO, es_cabeza: true }
