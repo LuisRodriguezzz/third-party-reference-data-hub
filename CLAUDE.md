@@ -18,7 +18,9 @@ landing → bronze → silver en Iceberg, infraestructura con Terraform y despli
 - Cada cambio va por una rama y un pull request. El CI corre `terraform plan` en el PR y lo
   deja como comentario; al mergear a `main`, el CI aplica. Nadie corre `terraform apply` del hub
   desde su máquina. La excepción es `infra/terraform/bootstrap/`, que se aplica a mano.
-- Antes de mergear un PR que cambia infraestructura en AWS: mostrar el plan y pedir un OK.
+- Antes de mergear un PR que cambia infraestructura en AWS: leer el plan del CI. Si no destruye
+  ni reemplaza nada, se mergea y después se le muestra el plan al dueño; si destruye o reemplaza
+  algo (`destroy` o `-/+`), se le muestra antes y se espera su OK.
 
 ## Cómo se escribe el código
 
