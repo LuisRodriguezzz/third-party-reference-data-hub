@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: identificadores
+    description: >
+      Las referencias cruzadas de cada empresa en formato largo: una fila por (cik, esquema, valor).
+      Ejemplo: dónde está el ISIN US0378331005 → where esquema = 'ISIN' and valor = '...'.
+    data_tests:
+      # Athena no tiene claves primarias: la unicidad de la terna va como test.
+      - unique:
+          arguments:
+            column_name: "cik || '|' || esquema || '|' || valor"
+    columns:
+      - name: cik
+        data_type: varchar
+        description: CIK de la empresa (la de empresas).
+        data_tests: [not_null]
+      - name: esquema
+        data_type: varchar
+        description: Qué código es.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [CIK, LEI, ISIN, FIGI, TICKER]
+      - name: valor
+        data_type: varchar
+        description: El código.
+        data_tests: [not_null]
+      - name: fuente
+        data_type: varchar
+        description: >
+          De dónde sale el vínculo con el CIK: sec, gleif_isin_lei, openfigi, o cruce_codigos y
+          cruce_nombre para el LEI, que nadie publica junto al CIK y lo deduce el cruce.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [sec, gleif_isin_lei, openfigi, cruce_codigos, cruce_nombre]

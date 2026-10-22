@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: candidatos_codigos
+    description: >
+      Camino por códigos: los LEIs posibles de cada CIK yendo por ticker (SEC) → OpenFIGI → ISIN →
+      LEI (ISIN↔LEI de GLEIF). Una fila por par (cik, lei).
+    columns:
+      - name: cik
+        data_type: varchar
+        description: CIK de la SEC, 10 dígitos con ceros adelante.
+        data_tests: [not_null]
+      - name: lei
+        data_type: varchar
+        description: LEI que emitió alguno de los ISIN del ticker.
+        data_tests: [not_null]
+
+unit_tests:
+  # La SEC escribe BRK-B y OpenFIGI BRK/B: tienen que cruzar.
+  - name: ticker_con_guion_cruza_con_barra
+    model: candidatos_codigos
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0001067983", ticker: BRK-B }
+      - input: source('silver', 'openfigi_tickers')
+        rows:
+          - { isin: US0846707026, ticker: BRK/B, security_type: Common Stock }
+      - input: source('silver', 'gleif_isin_lei')
+        rows:
+          - { isin: US0846707026, lei: LEI_BERKSHIRE }
+    expect:
+      rows:
+        - { cik: "0001067983", lei: LEI_BERKSHIRE }
+
+  # Un fondo con el mismo ticker no es evidencia de la empresa: solo cuentan las acciones.
+  - name: los_fondos_no_son_candidatos
+    model: candidatos_codigos
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000000004", ticker: DELTX }
+      - input: source('silver', 'openfigi_tickers')
+        rows:
+          - { isin: US0000000004, ticker: DELTX, security_type: Mutual Fund }
+      - input: source('silver', 'gleif_isin_lei')
+        rows:
+          - { isin: US0000000004, lei: LEI_FONDO }
+    expect:
+      rows: []

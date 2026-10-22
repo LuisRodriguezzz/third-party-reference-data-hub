@@ -1,0 +1,151 @@
+version: 2
+
+models:
+  - name: empresas
+    description: >
+      La golden copy: una fila por empresa de la SEC (CIK) con su LEI, el nombre legal y el estado
+      en GLEIF, y de qué camino salió el LEI. La regla del cruce está en el ADR 0008.
+    columns:
+      - name: cik
+        data_type: varchar
+        description: CIK de la SEC, 10 dígitos con ceros adelante. Una fila por CIK.
+        # Athena no hace cumplir NOT NULL ni unique: por eso van como tests de datos.
+        data_tests: [unique, not_null]
+      - name: nombre_sec
+        data_type: varchar
+        description: Nombre de la empresa tal cual lo publica la SEC.
+        data_tests: [not_null]
+      - name: lei
+        data_type: varchar
+        description: El LEI elegido. Nulo si no hubo candidatos o si quedó ambiguo.
+      - name: legal_name
+        data_type: varchar
+        description: Nombre legal del LEI en GLEIF.
+      - name: country
+        data_type: varchar
+        description: País de la dirección legal del LEI en GLEIF (ISO 3166-1, dos letras).
+      - name: entity_status
+        data_type: varchar
+        description: Estado de la entidad en GLEIF (ACTIVE, INACTIVE).
+      - name: registration_status
+        data_type: varchar
+        description: Estado del registro en GLEIF (ISSUED, LAPSED, RETIRED...).
+      - name: camino
+        data_type: varchar
+        description: >
+          El camino que decidió: codigos, nombre, o nulo si no hubo ningún candidato. Con
+          ambiguo = true dice qué camino quedó ambiguo (y el LEI es nulo).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [codigos, nombre]
+      - name: conflicto
+        data_type: boolean
+        description: Los dos caminos eligieron LEIs distintos; ganó el de códigos.
+        data_tests: [not_null]
+      - name: lei_en_conflicto
+        data_type: varchar
+        description: Si hubo conflicto, el LEI que daba el camino por nombre, para revisarlo.
+      - name: ambiguo
+        data_type: boolean
+        description: Después de desempatar quedó más de un candidato, así que no se eligió ninguno.
+        data_tests: [not_null]
+
+# Los tests de negocio de este paso: la regla del cruce, con datos inventados que muestran cada
+# caso. Solo se completan las columnas que importan; las demás quedan nulas.
+unit_tests:
+  - name: codigos_gana_y_marca_conflicto
+    model: empresas
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000000001", name: ACME INC }
+      - input: ref('candidatos_codigos')
+        rows:
+          - { cik: "0000000001", lei: LEI_CODIGOS }
+      - input: ref('candidatos_nombre')
+        rows:
+          - { cik: "0000000001", lei: LEI_NOMBRE }
+      - input: source('silver', 'gleif_isin_lei')
+        rows:
+          - { isin: US0000000001, lei: LEI_CODIGOS }
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_CODIGOS, legal_name: Acme Inc., registration_status: ISSUED, country: US }
+          - { lei: LEI_NOMBRE, legal_name: ACME INC, registration_status: ISSUED, country: US }
+    expect:
+      rows:
+        - cik: "0000000001"
+          lei: LEI_CODIGOS
+          legal_name: Acme Inc.
+          camino: codigos
+          conflicto: true
+          lei_en_conflicto: LEI_NOMBRE
+          ambiguo: false
+
+  # Sin códigos sale por nombre, y entre dos homónimos gana el que emitió títulos.
+  - name: sin_codigos_sale_por_nombre_y_prefiere_al_emisor
+    model: empresas
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000000002", name: BETA CORP }
+      - input: ref('candidatos_codigos')
+        rows: []
+      - input: ref('candidatos_nombre')
+        rows:
+          - { cik: "0000000002", lei: LEI_EMISOR }
+          - { cik: "0000000002", lei: LEI_NO_EMISOR }
+      - input: source('silver', 'gleif_isin_lei')
+        rows:
+          - { isin: US0000000002, lei: LEI_EMISOR }
+      - input: source('silver', 'gleif_lei')
+        rows:
+          # El no emisor tiene todo lo demás a favor: igual pierde, porque emisor va primero.
+          - { lei: LEI_EMISOR, registration_status: LAPSED, country: KY }
+          - { lei: LEI_NO_EMISOR, registration_status: ISSUED, country: US }
+    expect:
+      rows:
+        - { cik: "0000000002", lei: LEI_EMISOR, camino: nombre, conflicto: false, ambiguo: false }
+
+  # Dos candidatos iguales en todo lo que mira el desempate: no se adivina.
+  - name: dos_candidatos_empatados_quedan_ambiguos_y_sin_lei
+    model: empresas
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000000003", name: GAMMA HOLDINGS }
+      - input: ref('candidatos_codigos')
+        rows: []
+      - input: ref('candidatos_nombre')
+        rows:
+          - { cik: "0000000003", lei: LEI_UNO }
+          - { cik: "0000000003", lei: LEI_DOS }
+      - input: source('silver', 'gleif_isin_lei')
+        rows: []
+      - input: source('silver', 'gleif_lei')
+        rows:
+          - { lei: LEI_UNO, registration_status: ISSUED, country: US }
+          - { lei: LEI_DOS, registration_status: ISSUED, country: US }
+    expect:
+      rows:
+        - { cik: "0000000003", lei: null, camino: nombre, conflicto: false, ambiguo: true }
+
+  # Una empresa sin ningún candidato también está en la tabla, sin LEI y sin camino.
+  - name: sin_candidatos_queda_sin_lei
+    model: empresas
+    given:
+      - input: source('silver', 'sec_empresas')
+        rows:
+          - { cik: "0000093410", name: CHEVRON CORP }
+      - input: ref('candidatos_codigos')
+        rows: []
+      - input: ref('candidatos_nombre')
+        rows: []
+      - input: source('silver', 'gleif_isin_lei')
+        rows: []
+      - input: source('silver', 'gleif_lei')
+        rows: []
+    expect:
+      rows:
+        - { cik: "0000093410", lei: null, camino: null, conflicto: false, ambiguo: false }

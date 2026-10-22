@@ -1,0 +1,22 @@
+# Gold del hub con dbt: la golden copy de empresas (ADR 0008). Cada modelo es un SELECT; dbt lo
+# convierte en una tabla Iceberg de refhub_gold_<ambiente>, sabe en qué orden correrlos y corre
+# los tests. Cómo se corre: dbt/README.md.
+name: refhub
+version: "1.0.0"
+profile: refhub
+
+model-paths: ["models"]
+clean-targets: ["target", "logs"]
+
+models:
+  refhub:
+    +materialized: table
+    # Iceberg, como bronze y silver: commits atómicos y snapshots para volver atrás.
+    +table_type: iceberg
+    # Iceberg en Athena exige una carpeta nueva en cada build: dbt crea la tabla nueva en
+    # gold/<tabla>/<id único> y recién al final la cambia por la vieja (sin dejar la tabla vacía
+    # en el medio). Con "table" o "schema_table" dbt se niega a compilar.
+    +s3_data_naming: table_unique
+    # El contrato (columnas y tipos en el YAML de cada modelo) se hace cumplir en todos.
+    +contract:
+      enforced: true
