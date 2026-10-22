@@ -1,5 +1,6 @@
 # El pipeline entero en una máquina de Step Functions: las cuatro fuentes en paralelo hasta silver
-# (OpenFIGI detrás de ISIN↔LEI), después dbt build (gold), y un schedule APAGADO.
+# (OpenFIGI detrás de ISIN↔LEI), después dbt build (gold), las métricas del scorecard y el
+# mantenimiento de Iceberg en silver. Y un schedule APAGADO.
 
 locals {
   pipeline_name = "refhub-pipeline-${var.environment}" # -> refhub-pipeline-dev
@@ -56,6 +57,32 @@ locals {
     module.glue_sec.job_arn,
     module.glue_gleif_relaciones.job_arn,
   ]
+
+  # Mantenimiento de Iceberg: cada MERGE o reemplazo de silver es copy-on-write, o sea que
+  # reescribe archivos enteros, y los viejos quedan en S3 mientras algún snapshot los use.
+  # VACUUM borra los snapshots de más de 7 días y los archivos que solo usaban ellos. 7 días deja
+  # volver atrás (time travel) a cualquier corrida de la última semana; lo de antes se recupera
+  # reprocesando desde landing (ADR 0007). El default de Athena son 5 días.
+  retencion_snapshots_segundos = 7 * 24 * 3600 # 604800
+
+  tablas_silver = [
+    "gleif_lei", "gleif_lei_cuarentena", "gleif_archivos_procesados",
+    "gleif_isin_lei", "gleif_isin_lei_cuarentena",
+    "sec_empresas", "sec_empresas_cuarentena",
+    "gleif_relaciones", "gleif_relaciones_cuarentena",
+    "openfigi_tickers",
+  ]
+
+  # Las dos consultas de cada tabla, armadas acá y no en Step Functions: así se leen enteras.
+  # La primera fija la retención (es una propiedad de la tabla Iceberg que lee VACUUM; las tablas
+  # las crea Spark, que no la pone) y la segunda limpia.
+  mantenimiento_silver = [
+    for tabla in local.tablas_silver : {
+      tabla     = tabla
+      retencion = "ALTER TABLE ${aws_glue_catalog_database.silver.name}.${tabla} SET TBLPROPERTIES ('vacuum_max_snapshot_age_seconds' = '${local.retencion_snapshots_segundos}')"
+      vacuum    = "VACUUM ${aws_glue_catalog_database.silver.name}.${tabla}"
+    }
+  ]
 }
 
 # ---------------------------------------------------------------- 1. Step Functions
@@ -83,7 +110,8 @@ moved {
   to   = aws_iam_role.pipeline_sfn
 }
 
-# QUÉ: invocar la Lambda de ingesta, correr los jobs de silver y el build de dbt, y nada más.
+# QUÉ: invocar las Lambdas de ingesta y de métricas, correr los jobs de silver y el build de dbt,
+# y el mantenimiento de silver en Athena. Nada más.
 data "aws_iam_policy_document" "pipeline_sfn" {
   statement {
     sid     = "InvocarLaLambda"
@@ -91,6 +119,8 @@ data "aws_iam_policy_document" "pipeline_sfn" {
     resources = [
       aws_lambda_function.gleif.arn,
       "${aws_lambda_function.gleif.arn}:*", # también sus versiones, si algún día se publican
+      aws_lambda_function.metricas.arn,
+      "${aws_lambda_function.metricas.arn}:*",
     ]
   }
 
@@ -115,6 +145,43 @@ data "aws_iam_policy_document" "pipeline_sfn" {
     actions   = ["events:PutTargets", "events:PutRule", "events:DescribeRule"]
     resources = ["arn:aws:events:${data.aws_region.actual.region}:${local.account_id}:rule/StepFunctionsGetEventForCodeBuildStartBuildRule"]
   }
+
+  # El mantenimiento de silver lo corre Athena con los permisos de este rol: la consulta, el
+  # catálogo (cada ALTER y cada VACUUM es un commit nuevo de la tabla) y los archivos.
+  statement {
+    sid       = "MantenimientoConAthena"
+    actions   = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:StopQueryExecution", "athena:GetWorkGroup"]
+    resources = [aws_athena_workgroup.hub.arn]
+  }
+
+  statement {
+    sid     = "MantenimientoCatalogoSilver"
+    actions = ["glue:GetDatabase", "glue:GetTable", "glue:UpdateTable"]
+    resources = [
+      local.glue_catalog_arn,
+      aws_glue_catalog_database.silver.arn,
+      "arn:aws:glue:${data.aws_region.actual.region}:${local.account_id}:table/${aws_glue_catalog_database.silver.name}/*",
+    ]
+  }
+
+  statement {
+    # Sin DeleteObject, VACUUM "termina bien" pero no borra nada (lo dice la documentación).
+    sid       = "MantenimientoArchivosSilver"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.data.arn}/silver/*"]
+  }
+
+  statement {
+    sid       = "MantenimientoResultados"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"]
+    resources = ["${aws_s3_bucket.data.arn}/athena-results/*"]
+  }
+
+  statement {
+    sid       = "MantenimientoVerElBucket" # VACUUM lista la carpeta para encontrar huérfanos
+    actions   = ["s3:GetBucketLocation", "s3:ListBucket"]
+    resources = [aws_s3_bucket.data.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "pipeline_sfn" {
@@ -137,7 +204,7 @@ resource "aws_sfn_state_machine" "pipeline" {
 
   # La definición es un JSON (Amazon States Language). jsonencode lo arma desde HCL.
   definition = jsonencode({
-    Comment = "Las fuentes hasta silver en paralelo, después gold con dbt"
+    Comment = "Las fuentes hasta silver en paralelo, gold con dbt, métricas y mantenimiento de silver"
     StartAt = "Fuentes"
     States = {
       # Parallel corre las cuatro ramas a la vez y espera a que terminen todas. Si una falla,
@@ -238,6 +305,60 @@ resource "aws_sfn_state_machine" "pipeline" {
         ResultPath     = "$.gold"
         TimeoutSeconds = 2400 # 40 minutos: más que el timeout del build (30) más la cola
         # Sin Retry, como Glue: si dbt falla casi siempre es un test de datos, y repetir no lo arregla.
+        Next = "PublicarMetricas"
+      }
+
+      # Lee el scorecard de gold y lo deja como métricas en CloudWatch (EMF). Ahí miran las alarmas.
+      # Mismos reintentos que la ingesta: la Lambda solo lee y escribe un log, se puede repetir.
+      PublicarMetricas = merge(local.paso_lambda, {
+        Parameters = { FunctionName = aws_lambda_function.metricas.arn }
+        OutputPath = "$" # el paso_lambda se queda con $.Payload; acá, con todo lo que venía...
+        ResultSelector = {
+          "valores.$" = "$.Payload" # ...así, lo que devolvió la Lambda...
+        }
+        ResultPath = "$.metricas" # ...se agrega a lo que venía, como los otros pasos
+        Next       = "TablasSilver"
+      })
+
+      # Mantenimiento de Iceberg: al final, con gold ya armado, para no competir con nada.
+      # Pass solo pone la lista de tablas (con sus dos consultas) en la entrada del Map.
+      TablasSilver = {
+        Type       = "Pass"
+        Result     = local.mantenimiento_silver
+        ResultPath = "$.mantenimiento"
+        Next       = "MantenerSilver"
+      }
+
+      # Una iteración por tabla, de a una (MaxConcurrency = 1): son consultas cortas y así no
+      # compiten por el límite de consultas simultáneas de Athena.
+      MantenerSilver = {
+        Type           = "Map"
+        ItemsPath      = "$.mantenimiento"
+        MaxConcurrency = 1
+        ResultPath     = null # lo que devuelve cada consulta no sirve: la salida queda como venía
+        ItemProcessor = {
+          ProcessorConfig = { Mode = "INLINE" }
+          StartAt         = "FijarRetencion"
+          States = {
+            FijarRetencion = {
+              Type       = "Task"
+              Resource   = "arn:aws:states:::athena:startQueryExecution.sync" # espera a que termine
+              Parameters = { "QueryString.$" = "$.retencion", WorkGroup = aws_athena_workgroup.hub.name }
+              ResultPath = null # se queda con la tabla de esta iteración, para el paso siguiente
+              # Sin Retry: si falla, la ejecución falla y la alarma avisa. Silver ya está cargada.
+              TimeoutSeconds = 300
+              Next           = "Vacuum"
+            }
+            Vacuum = {
+              Type           = "Task"
+              Resource       = "arn:aws:states:::athena:startQueryExecution.sync"
+              Parameters     = { "QueryString.$" = "$.vacuum", WorkGroup = aws_athena_workgroup.hub.name }
+              ResultPath     = null
+              TimeoutSeconds = 900
+              End            = true
+            }
+          }
+        }
         End = true
       }
     }

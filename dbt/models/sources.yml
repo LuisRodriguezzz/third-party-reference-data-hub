@@ -20,3 +20,14 @@ sources:
         description: >
           Una fila por ISIN de acciones de EE. UU. mandado a OpenFIGI, con su FIGI y su ticker
           (nulos si OpenFIGI no devolvió nada; ver resultados y motivo).
+      # Las que lee el scorecard (scorecard_fuentes): las otras tablas de silver y sus cuarentenas.
+      - name: gleif_relaciones
+        description: Las relaciones entre empresas de GLEIF (nivel 2), la última foto completa.
+      - name: gleif_archivos_procesados
+        description: Los archivos de bronze que el job de silver de GLEIF ya procesó, con sus filas rechazadas.
+      - name: gleif_isin_lei_cuarentena
+        description: Las filas de ISIN↔LEI que no cumplieron el contrato, con el motivo.
+      - name: sec_empresas_cuarentena
+        description: Las filas de la SEC que no cumplieron el contrato, con el motivo.
+      - name: gleif_relaciones_cuarentena
+        description: Las filas de relaciones que no cumplieron el contrato, con el motivo.

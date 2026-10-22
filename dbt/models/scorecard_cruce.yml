@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: scorecard_cruce
+    description: >
+      Una sola fila con la calidad del cruce CIK↔LEI de esta corrida: cuántas empresas, cuántas
+      con LEI y por qué camino, cuántas en conflicto, ambiguas o sin candidatos (ADR 0008).
+    columns:
+      - name: empresas
+        data_type: bigint
+        description: Empresas de la SEC en la golden copy (una por CIK).
+        data_tests: [not_null]
+      - name: con_lei
+        data_type: bigint
+        description: Empresas con un LEI elegido.
+        data_tests: [not_null]
+      - name: porcentaje_con_lei
+        data_type: double
+        description: con_lei sobre empresas, de 0 a 100.
+      - name: por_codigos
+        data_type: bigint
+        description: Empresas cuyo LEI salió por códigos (ticker → OpenFIGI → ISIN → LEI).
+        data_tests: [not_null]
+      - name: por_nombre
+        data_type: bigint
+        description: Empresas cuyo LEI salió por nombre.
+        data_tests: [not_null]
+      - name: conflictos
+        data_type: bigint
+        description: Empresas donde los dos caminos dieron LEIs distintos (ganó códigos).
+        data_tests: [not_null]
+      - name: ambiguos
+        data_type: bigint
+        description: Empresas que quedaron sin LEI porque había más de un candidato empatado.
+        data_tests: [not_null]
+      - name: sin_candidatos
+        data_type: bigint
+        description: Empresas sin ningún candidato en ningún camino.
+        data_tests: [not_null]
+
+unit_tests:
+  # Una ambigua tiene camino pero no LEI: cuenta como ambigua, no "por nombre".
+  - name: por_camino_cuenta_solo_las_que_tienen_lei
+    model: scorecard_cruce
+    given:
+      - input: ref('empresas')
+        rows:
+          - { cik: "1", lei: L1, camino: codigos, conflicto: true, ambiguo: false }
+          - { cik: "2", lei: L2, camino: nombre, conflicto: false, ambiguo: false }
+          - { cik: "3", lei: null, camino: nombre, conflicto: false, ambiguo: true }
+          - { cik: "4", lei: null, camino: null, conflicto: false, ambiguo: false }
+    expect:
+      rows:
+        - empresas: 4
+          con_lei: 2
+          porcentaje_con_lei: 50.0
+          por_codigos: 1
+          por_nombre: 1
+          conflictos: 1
+          ambiguos: 1
+          sin_candidatos: 1
