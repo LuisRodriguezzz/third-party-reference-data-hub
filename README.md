@@ -146,9 +146,35 @@ The rules are covered by dbt unit tests with invented rows, one per case.
 
 ### Precision and recall
 
-> **Pending.** Coverage is not accuracy. Precision and recall will be measured against a gold set
-> of 100 randomly drawn SEC companies labeled by hand, blind to the hub's output. This section
-> will be filled in with the result, its date and its margin of error.
+Coverage is not accuracy. Measured on 2026-10-22 against a **gold set of 100 SEC companies drawn
+at random** (fixed seed) and labeled **blind**: the labeler never saw what the hub chose. The
+labeler was an AI agent working only from GLEIF's public API and SEC EDGAR, with the evidence for
+every row kept (same legal name or a former one, and matching jurisdiction or address; a parent
+or a subsidiary does not count). A person audits 10 random labels: *audit pending*. Result: 73
+companies have an LEI, 27 do not, 0 left undecided. Margins are 95% Wilson intervals.
+
+| Path | Assigned | Correct | Precision | 95% CI |
+|---|---:|---:|---:|---|
+| By codes | 41 | 41 | 100% | 91.4% – 100% |
+| By name | 22 | 21 | 95.5% | 78.2% – 99.2% |
+| **Total** | **63** | **62** | **98.4%** | 91.5% – 99.7% |
+
+**Recall: 62 of the 73 companies that have an LEI, 84.9%** (95% CI 75.0% – 91.4%). None of the
+27 companies without an LEI got one assigned.
+
+What the 12 cases that did not come out right teach:
+
+- **The only wrong link (Hydro One):** the name path picked the subsidiary that issues the bonds.
+  The tie-break prefers the entity that issued securities, and in a holding structure the debt is
+  often issued by a subsidiary, not by the listed parent.
+- **7 misses are a deliberate trade-off:** foreign issuers quoted in the US (six Canadian, one
+  Cayman) whose names match exactly, but whose LEI is not American and has no securities in the
+  ISIN↔LEI file. The rule that keeps them out is the one that stops a same-name company abroad
+  from winning (Chevron vs. a Maltese "Chevron Limited"): high precision, paid for in recall.
+  Next step: accept a foreign LEI when its jurisdiction matches the SEC's place of incorporation.
+- **1 miss** has its GLEIF legal name in Japanese script, so its normalized Latin name is empty;
+  GLEIF's transliterated names, not loaded yet, would fix it. **1** was renamed and redomiciled.
+  **1** is no longer in the SEC list it was drawn from.
 
 ## Permissions API
 
@@ -279,7 +305,8 @@ Agrupa empresas por su controlante final y suma una cartera **sintética** por g
 son hallazgos). Las licencias están en DCAT y ODRL, se compilan en el CI y una API privada responde
 si una aplicación puede usar un dataset para un propósito, con la regla y las obligaciones. Todo
 corre de punta a punta en un pipeline de Step Functions (medido el 21-oct: 31 min 38 s, unos
-0,21 USD), con infraestructura en Terraform aplicada por PR. La
-precisión y el recall del cruce quedan pendientes del gold set de 100 casos etiquetados a mano. Las
+0,21 USD), con infraestructura en Terraform aplicada por PR. Contra un
+gold set de 100 empresas al azar, etiquetado a ciegas, el cruce tiene **98,4 % de precisión** (62 de
+63; IC 95 %: 91,5 % a 99,7 %) y **84,9 % de recall** (62 de 73; IC 95 %: 75,0 % a 91,4 %). Las
 decisiones están en `docs/adr/`, los costos en `docs/costos.md` y dos postmortems en
 `docs/postmortems/`.
