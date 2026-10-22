@@ -28,6 +28,8 @@ Queda afuera:
 - Kubernetes y un segundo modelo de grafo (Gremlin).
 - Servicios que pueden gastar el crédito en horas: NAT Gateway, OpenSearch
   gestionado, Neptune Serverless.
+- Neptune en cualquiera de sus formas: el grafo RDF se consulta con SPARQL en el mismo
+  proceso (ADR 0010).
 
 ## Alternativas consideradas
 

@@ -1,0 +1,103 @@
+# Las aplicaciones internas que piden datos y los propósitos para los que los usan.
+#
+# SINTÉTICO: el banco y sus aplicaciones son inventados (ADR 0001). Sirven para que el evaluador
+# tenga a quién responder; las licencias y las fuentes sí son reales (salvo el feed ficticio).
+#
+# - Propósitos: un esquema de conceptos SKOS (W3C), el estándar más simple para una jerarquía.
+#   skos:broader apunta al propósito más general: una regla para uso_interno vale también para
+#   riesgo_credito, porque riesgo de crédito es un uso interno.
+# - Qué propósitos usa cada aplicación: dpv:hasPurpose, del vocabulario de privacidad de datos del
+#   W3C (DPV), que es el que se usa para decir "este proceso trata datos para este propósito".
+
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix dpv:   <https://w3id.org/dpv#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix odrl:  <http://www.w3.org/ns/odrl/2/> .
+@prefix prov:  <http://www.w3.org/ns/prov#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix ag:    <https://refhub.example.org/agente/> .
+@prefix app:   <https://refhub.example.org/aplicacion/> .
+@prefix prop:  <https://refhub.example.org/proposito/> .
+
+ag:banco a foaf:Organization, odrl:Party ;
+    foaf:name "Banco SINTÉTICO"@es ;
+    rdfs:comment "El banco que usa el hub. Inventado."@es .
+
+# --- Propósitos --------------------------------------------------------------------------------
+
+prop:esquema a skos:ConceptScheme ;
+    skos:prefLabel "Propósitos de uso de datos"@es ;
+    skos:hasTopConcept prop:uso_interno, prop:uso_no_display, prop:distribucion_externa .
+
+# Uso interno: personas o procesos del banco, sin que el dato salga del banco.
+prop:uso_interno a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:prefLabel "Uso interno"@es .
+
+prop:display_interno a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:uso_interno ;
+    skos:prefLabel "Display interno"@es ;
+    skos:definition "Una persona del banco mira el dato en una pantalla."@es .
+
+prop:riesgo_credito a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:uso_interno ;
+    skos:prefLabel "Riesgo de crédito"@es ;
+    skos:definition "Calcular la exposición a una empresa o grupo económico."@es .
+
+prop:reporte_regulatorio a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:uso_interno ;
+    skos:prefLabel "Reporte regulatorio"@es ;
+    skos:definition "Informar al regulador (el dato se entrega, pero por obligación legal)."@es .
+
+# Non-display: un programa usa el dato sin que nadie lo mire. En market data se licencia aparte.
+prop:uso_no_display a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:prefLabel "Uso non-display (algorítmico)"@es .
+
+prop:trading_algoritmico a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:uso_no_display ;
+    skos:prefLabel "Trading algorítmico"@es .
+
+# Distribución externa: el dato sale del banco hacia clientes o el público.
+prop:distribucion_externa a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:prefLabel "Distribución externa"@es .
+
+prop:publicacion_externa a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:distribucion_externa ;
+    skos:prefLabel "Publicación externa"@es ;
+    skos:definition "Mostrar el dato en un sitio público o en un informe para clientes."@es .
+
+prop:producto_comercial a skos:Concept ;
+    skos:inScheme prop:esquema ;
+    skos:broader prop:distribucion_externa ;
+    skos:prefLabel "Producto comercial"@es ;
+    skos:definition "Vender el dato, o un producto que lo incluye, a clientes."@es .
+
+# --- Aplicaciones (sintéticas) -------------------------------------------------------------------
+
+app:riesgo_corporativo a prov:SoftwareAgent, odrl:Party ;
+    rdfs:label "Riesgo corporativo (SINTÉTICA)"@es ;
+    prov:actedOnBehalfOf ag:banco ;
+    dpv:hasPurpose prop:riesgo_credito, prop:reporte_regulatorio .
+
+app:monitor_mercado a prov:SoftwareAgent, odrl:Party ;
+    rdfs:label "Monitor de mercado para la mesa (SINTÉTICA)"@es ;
+    prov:actedOnBehalfOf ag:banco ;
+    dpv:hasPurpose prop:display_interno .
+
+app:portal_clientes a prov:SoftwareAgent, odrl:Party ;
+    rdfs:label "Portal de clientes (SINTÉTICA)"@es ;
+    prov:actedOnBehalfOf ag:banco ;
+    dpv:hasPurpose prop:publicacion_externa, prop:producto_comercial .
+
+app:motor_trading a prov:SoftwareAgent, odrl:Party ;
+    rdfs:label "Motor de trading algorítmico (SINTÉTICA)"@es ;
+    prov:actedOnBehalfOf ag:banco ;
+    dpv:hasPurpose prop:trading_algoritmico .
