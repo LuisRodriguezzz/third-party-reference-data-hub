@@ -1,5 +1,6 @@
-# Ingesta, parte 1: la Lambda que baja a landing/ el delta de GLEIF, el archivo ISIN↔LEI y las
-# empresas de la SEC (el evento dice cuál), sus logs y sus permisos. Se sigue llamando
+# Ingesta, parte 1: la Lambda que baja a landing/ el delta de GLEIF, el archivo ISIN↔LEI, las
+# relaciones de GLEIF (nivel 2) y las empresas de la SEC (el evento dice cuál), sus logs y sus
+# permisos. Se sigue llamando
 # refhub-gleif-ingest: cambiarle el nombre borraría y recrearía la función.
 
 # Un "local" es un valor con nombre que se calcula una vez y se reusa en este proyecto.
@@ -52,6 +53,7 @@ data "aws_iam_policy_document" "gleif_lambda" {
     resources = [                              # solo las carpetas de landing de sus fuentes
       "${aws_s3_bucket.data.arn}/landing/gleif/*",
       "${aws_s3_bucket.data.arn}/landing/gleif_isin_lei/*",
+      "${aws_s3_bucket.data.arn}/landing/gleif_rr/*",
       "${aws_s3_bucket.data.arn}/landing/sec/*",
     ]
   }
