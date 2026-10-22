@@ -84,8 +84,10 @@ que una máquina las lea, y un evaluador con reglas claras para los conflictos.
 
 - Los IRIs usan `refhub.example.org`, un dominio reservado para ejemplos: no chocan con nada
   real. Si el catálogo se publicara, se cambia la base.
-- rdflib pasa a ser dependencia del paquete. Los jobs de Glue la instalan con el `.whl` (no la
-  usan); la Lambda de la API va a tener que empaquetarla.
+- rdflib es un extra opcional del paquete (`refhub[licencias]`), no una dependencia obligatoria:
+  la dependencia va donde se usa. Los jobs de Glue instalan el `.whl` sin extras y no la bajan
+  de PyPI en cada arranque; los tests la tienen por el grupo dev; la Lambda de la API va a
+  empaquetarla.
 - El evaluador solo entiende restricciones de propósito y asignatario por regla. Una licencia
   con fechas, territorio o cantidad de usuarios necesita sumar ese operando al evaluador.
 - `silver.openfigi_tickers` está en el catálogo antes de existir en el pipeline (llega con el

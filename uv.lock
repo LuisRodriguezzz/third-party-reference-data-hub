@@ -88,22 +88,27 @@ wheels = [
 name = "refhub"
 version = "0.7.0"
 source = { editable = "." }
-dependencies = [
+
+[package.optional-dependencies]
+licencias = [
     { name = "rdflib" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "refhub", extra = ["licencias"] },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rdflib", specifier = ">=7.6.0" }]
+requires-dist = [{ name = "rdflib", marker = "extra == 'licencias'", specifier = ">=7.6" }]
+provides-extras = ["licencias"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
+    { name = "refhub", extras = ["licencias"] },
     { name = "ruff", specifier = ">=0.16.9" },
 ]
 

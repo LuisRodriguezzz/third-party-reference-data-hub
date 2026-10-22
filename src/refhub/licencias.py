@@ -4,6 +4,10 @@ El catálogo (DCAT), las políticas (ODRL) y las aplicaciones están en `refhub/
 `evaluar` responde una pregunta y dice con qué regla lo decidió; `compilar` responde todas de
 antemano, para que la API no tenga que evaluar en caliente (ADR 0009).
 
+Necesita el extra `licencias` (`pip install refhub[licencias]`), que trae rdflib. No es una
+dependencia obligatoria porque los jobs de Glue instalan el paquete y no usan este módulo; la
+futura Lambda de la API sí la va a empaquetar.
+
 Semántica, cada punto con su criterio:
 
 - **La prohibición gana sobre el permiso** (deny-overrides): si una regla prohíbe y otra
