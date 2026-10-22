@@ -33,3 +33,7 @@ output "glue_gleif_isin_lei_job" {
 output "glue_sec_job" {
   value = module.glue_sec.job_name
 }
+
+output "glue_gleif_relaciones_job" {
+  value = module.glue_gleif_relaciones.job_name
+}

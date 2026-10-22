@@ -28,6 +28,32 @@ REGISTRATION_STATUSES = frozenset(
         "PENDING_ARCHIVAL",
     }
 )
+# Nivel 2 (relationship records), según el formato RR-CDF 2.1 de GLEIF.
+RELATIONSHIP_TYPES = frozenset(
+    {
+        "IS_DIRECTLY_CONSOLIDATED_BY",  # la controlante directa
+        "IS_ULTIMATELY_CONSOLIDATED_BY",  # la controlante final: la cabeza del grupo
+        "IS_INTERNATIONAL_BRANCH_OF",
+        "IS_FUND-MANAGED_BY",
+        "IS_SUBFUND_OF",
+        "IS_FEEDER_TO",
+    }
+)
+RELATIONSHIP_STATUSES = frozenset({"ACTIVE", "INACTIVE", "NULL"})
+# El registro de una relación tiene sus propios estados: PUBLISHED en vez del ISSUED de un LEI.
+RELATIONSHIP_REGISTRATION_STATUSES = frozenset(
+    {
+        "PENDING_VALIDATION",
+        "PUBLISHED",
+        "DUPLICATE",
+        "LAPSED",
+        "RETIRED",
+        "ANNULLED",
+        "TRANSFERRED",
+        "PENDING_TRANSFER",
+        "PENDING_ARCHIVAL",
+    }
+)
 _COUNTRY = re.compile(r"[A-Z]{2}")  # código ISO 3166 de dos letras
 _CIK = re.compile(r"[0-9]{1,10}")  # el CIK de la SEC: un número de hasta 10 dígitos
 _TICKER = re.compile(r"[A-Z0-9][A-Z0-9.\-]*")  # AAPL, BRK-B
@@ -101,6 +127,34 @@ def isin_lei_problem(row: dict[str, str | None]) -> str | None:
     problem = lei_problem(row["lei"])
     if problem is not None:
         return f"lei_{problem}"
+    return None
+
+
+def relationship_problem(row: dict[str, str | None]) -> str | None:
+    """Contrato de las relaciones de GLEIF (nivel 2). Devuelve el primer motivo, o None si cumple.
+
+    Los dos LEIs tienen que ser válidos: una relación con un LEI roto no se puede unir con
+    gleif_lei, y si fuera el de la controlante, la empresa quedaría en un grupo que no existe.
+    El tipo, los estados y las fechas, porque gold va a filtrar por ellos (la controlante
+    final, la relación activa y vigente): un valor desconocido se perdería en silencio.
+    """
+    for side in ("child_lei", "parent_lei"):
+        problem = lei_problem(row[side])
+        if problem is not None:
+            return f"{side}_{problem}"
+    if row["relationship_type"] not in RELATIONSHIP_TYPES:
+        return "tipo_relacion_desconocido"
+    if row["relationship_status"] not in RELATIONSHIP_STATUSES:
+        return "estado_relacion_desconocido"
+    if row["registration_status"] not in RELATIONSHIP_REGISTRATION_STATUSES:
+        return "estado_registro_desconocido"
+    if parse_timestamp(row["last_update"]) is None:
+        return "fecha_actualizacion_invalida"
+    # El período puede faltar (GLEIF no lo exige), pero si viene tiene que ser una fecha.
+    if row["relationship_start"] and parse_timestamp(row["relationship_start"]) is None:
+        return "fecha_inicio_invalida"
+    if row["relationship_end"] and parse_timestamp(row["relationship_end"]) is None:
+        return "fecha_fin_invalida"
     return None
 
 

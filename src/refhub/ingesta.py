@@ -1,13 +1,13 @@
 """La Lambda de ingesta: baja a landing/ la fuente que pide el evento.
 
 {"fuente": "gleif"} (o un evento vacío, como manda Step Functions desde el hito 3): el delta
-diario de GLEIF. {"fuente": "gleif_isin_lei"}: el archivo ISIN↔LEI. {"fuente": "sec"}: las
-empresas de la SEC.
+diario de GLEIF. {"fuente": "gleif_isin_lei"}: el archivo ISIN↔LEI. {"fuente": "gleif_rr"}: las
+relaciones entre empresas de GLEIF (nivel 2). {"fuente": "sec"}: las empresas de la SEC.
 """
 
 import os
 
-from refhub.sources import gleif, gleif_isin_lei, sec
+from refhub.sources import gleif, gleif_isin_lei, gleif_rr, sec
 
 
 def handler(event, context):
@@ -23,6 +23,8 @@ def handler(event, context):
         result = gleif.upload_to_landing(s3, bucket, gleif.latest_delta_url())
     elif fuente == "gleif_isin_lei":
         result = gleif_isin_lei.upload_latest(s3, bucket)
+    elif fuente == "gleif_rr":
+        result = gleif_rr.upload_latest(s3, bucket)
     elif fuente == "sec":
         result = sec.upload_latest(s3, bucket, os.environ["SEC_CONTACT"])
     else:

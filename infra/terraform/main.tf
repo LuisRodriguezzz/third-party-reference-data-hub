@@ -84,6 +84,21 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
       days = 30
     }
   }
+
+  # Las relaciones de GLEIF (nivel 2) también son una foto completa por publicación (23 MB):
+  # mismo criterio que ISIN↔LEI. Al final, por la misma razón.
+  rule {
+    id     = "borrar-relaciones-viejas"
+    status = "Enabled"
+
+    filter {
+      prefix = "landing/gleif_rr/"
+    }
+
+    expiration {
+      days = 30
+    }
+  }
 }
 
 resource "aws_budgets_budget" "mensual" {
