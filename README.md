@@ -89,6 +89,13 @@ flowchart LR
   Athena for SQL (a workgroup that cancels any query reading more than 1 GB).
 - **Compute:** Lambda downloads, Glue 5.1 (Spark) writes bronze and silver, dbt on Athena builds
   gold inside CodeBuild. No servers running between pipeline runs, no VPC.
+- **Measured end to end:** the full pipeline ran with every step green on 2026-10-21
+  (`prueba-completa-20261022T021256`) in **31 min 38 s**: the four source branches in parallel
+  8 min 3 s (the longest is ISIN↔LEI followed by OpenFIGI), dbt in CodeBuild 2 min 39 s, metrics
+  9 s, and the Iceberg `VACUUM` of the 10 silver tables 20 min 47 s. That last step runs one table
+  at a time and each Athena step waits about a minute in Step Functions, although every query
+  finishes in under 4 s; it costs nothing extra (Standard workflows bill per transition, not per
+  minute), but it is the obvious place to shorten the run.
 - **Delivery:** every change goes through a pull request; CI posts `terraform plan` on the PR and,
   on merge, builds the package once, publishes it to S3 under an immutable version and runs
   `terraform apply`. GitHub authenticates to AWS with OIDC (no stored keys), with a read-only role
@@ -102,9 +109,9 @@ quotes: [`docs/licencias-fuentes.md`](docs/licencias-fuentes.md).
 | Source | What the hub takes | License (as published) | Duty modeled in ODRL |
 |---|---|---|---|
 | [GLEIF LEI data](https://www.gleif.org/en/meta/lei-data-terms-of-use) | LEI records: daily deltas and the full file (3.46 M LEIs) | CC0 | none |
-| [GLEIF + ANNA ISIN↔LEI](https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files) | Which ISINs each LEI issued (9.27 M rows) | No named license found; described by GLEIF and ANNA as open and free, modeled as any use | none |
+| [GLEIF + ANNA ISIN↔LEI](https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files) | Which ISINs each LEI issued (9.37 M rows) | No named license found; described by GLEIF and ANNA as open and free, modeled as any use | none |
 | GLEIF level 2 relationships | Who consolidates whom (491 k relationships) | Same GLEIF terms of use (CC0 for the data of the Global LEI Repository; the terms do not name level 2 explicitly) | not in the catalog yet |
-| [SEC EDGAR](https://www.sec.gov/privacy) | `company_tickers_exchange.json` (10,435 tickers, 8,017 companies) | Public information; the SEC asks to be cited as the source | cite the SEC |
+| [SEC EDGAR](https://www.sec.gov/privacy) | `company_tickers_exchange.json` (10,443 tickers, 8,029 companies) | Public information; the SEC asks to be cited as the source | cite the SEC |
 | [OpenFIGI](https://www.openfigi.com/docs/terms-of-service) | FIGI and ticker for US equity ISINs | FIGI identifiers dedicated to the public domain | none |
 | Price feed, **FICTITIOUS** | Not ingested. Exists only to show a market-data-style license | Internal display for the subscribed app only, no non-display use, derived data internal only, no redistribution | (prohibitions) |
 
@@ -114,21 +121,21 @@ The fictitious provider is declared as such in the policy file itself and uses n
 
 ### Golden copy: SEC companies resolved to an LEI
 
-Measured on `refhub_gold_dev.empresas` on 2026-10-21 (Athena). The `scorecard_cruce` model
-computes the same figures on every pipeline run.
+Measured in Athena on `refhub_gold_dev.scorecard_cruce`, which the pipeline rebuilds on every
+run, after the full run of 2026-10-21 (`prueba-completa-20261022T021256`).
 
 | | Companies | Share |
 |---|---:|---:|
-| SEC companies (one row per CIK) | 8,017 | 100 % |
-| **With an LEI** | **4,241** | **52.9 %** |
-| via published codes (ticker → OpenFIGI → ISIN → LEI) | 2,683 | 33.5 % |
-| via normalized legal name (fallback) | 1,558 | 19.4 % |
-| Both paths disagree (codes win, flagged `conflict`) | 55 | 0.7 % |
+| SEC companies (one row per CIK) | 8,029 | 100 % |
+| **With an LEI** | **4,245** | **52.9 %** |
+| via published codes (ticker → OpenFIGI → ISIN → LEI) | 2,686 | 33.5 % |
+| via normalized legal name (fallback) | 1,559 | 19.4 % |
+| Both paths disagree (codes win, flagged `conflict`) | 54 | 0.7 % |
 | Left **without** an LEI because several candidates tie (`ambiguous`) | 19 | 0.2 % |
-| No candidate at all | 3,757 | 46.9 % |
+| No candidate at all | 3,765 | 46.9 % |
 
-The cross-reference table `gold.identificadores` has 605,872 rows: 579,651 ISINs, 10,435 tickers,
-8,017 CIKs, 4,241 LEIs and 3,528 FIGIs. Example: Apple Inc. (CIK `0000320193`) resolves to LEI
+The cross-reference table `gold.identificadores` has 605,966 rows: 579,718 ISINs, 10,443 tickers,
+8,029 CIKs, 4,245 LEIs and 3,531 FIGIs. Example: Apple Inc. (CIK `0000320193`) resolves to LEI
 `HWUPKR0MPOU8FGXBT394` through the codes path.
 
 How it decides ([ADR 0008](docs/adr/0008-golden-copy.md)): codes first, name only as a fallback
@@ -186,7 +193,7 @@ logged as one JSON line with the signing IAM principal.
 ## Exposure by economic group
 
 `gold.grupos` maps every LEI to its **ultimate parent as published by GLEIF** (a join, no
-recursion): 3,458,596 LEIs, 133,216 of them with an ultimate parent. Only accounting consolidation
+recursion): 3,460,622 LEIs, 133,250 of them with an ultimate parent. Only accounting consolidation
 forms a group; fund management, sub-funds, feeders and branches do not
 ([ADR 0013](docs/adr/0013-exposicion-por-grupo.md)).
 
@@ -210,9 +217,9 @@ and Python 3.12. Locally, `uv run pytest` runs the business-rule tests (138, no 
 ## Costs
 
 Building everything so far moved the account's credit balance from 177.44 USD (2026-09-27, before
-any hub resource) to 176.78 USD (2026-10-21). One full pipeline run costs about 0.30 to 0.35 USD,
-almost all of it Glue (0.32 USD of Glue measured on 2026-10-21), which is why the daily schedule
-stays off. Measured and estimated figures, sources, and the defaults that keep it cheap (10 USD
+any hub resource) to 176.78 USD (2026-10-21). The end-to-end run of 2026-10-21 cost about 0.21 USD, measured
+(Glue 0.19 USD, CodeBuild and Athena about a cent each); a run with more new data cost 0.32 USD of
+Glue the same day. That is why the daily schedule stays off. Measured and estimated figures, sources, and the defaults that keep it cheap (10 USD
 budget, 1 GB cap per Athena query, log retention, no NAT or VPC endpoints):
 [`docs/costos.md`](docs/costos.md).
 
@@ -247,7 +254,7 @@ Postmortems (blameless): [0001 · silver kept a version GLEIF no longer publishe
 - **Direct parent without an ultimate parent:** 7,483 companies declare only a direct parent; they
   are treated as the head of their own group. Ownership percentages are not available in GLEIF
   level 2, so a group is all or nothing.
-- **The daily schedule is off, on purpose.** It exists, but a daily run would cost an estimated 8 to 10 USD
+- **The daily schedule is off, on purpose.** It exists, but a daily run would cost an estimated 6 to 10 USD
   a month against a 10 USD budget, so the pipeline is run by hand.
 - **One environment (`dev`).** The code is ready for more (names and state per environment), but
   promotion between environments has not been exercised.
@@ -260,12 +267,13 @@ Postmortems (blameless): [0001 · silver kept a version GLEIF no longer publishe
 Un hub de datos de referencia de terceros, chico y funcionando en AWS, con datos públicos reales.
 Baja GLEIF, la relación ISIN↔LEI, las relaciones de control de GLEIF, la SEC y OpenFIGI; los
 guarda tal cual en landing, los valida y deduplica en tablas Iceberg (bronze y silver, con
-cuarentena) y arma con dbt la golden copy: de 8.017 empresas de la SEC, 4.241 (52,9 %) quedaron
+cuarentena) y arma con dbt la golden copy: de 8.029 empresas de la SEC, 4.245 (52,9 %) quedaron
 con LEI, primero por códigos publicados y después por nombre, sin adivinar cuando hay empate.
 Agrupa empresas por su controlante final y suma una cartera **sintética** por grupo (sus cifras no
 son hallazgos). Las licencias están en DCAT y ODRL, se compilan en el CI y una API privada responde
 si una aplicación puede usar un dataset para un propósito, con la regla y las obligaciones. Todo
-corre en un pipeline de Step Functions, con infraestructura en Terraform aplicada por PR. La
+corre de punta a punta en un pipeline de Step Functions (medido el 21-oct: 31 min 38 s, unos
+0,21 USD), con infraestructura en Terraform aplicada por PR. La
 precisión y el recall del cruce quedan pendientes del gold set de 100 casos etiquetados a mano. Las
 decisiones están en `docs/adr/`, los costos en `docs/costos.md` y dos postmortems en
 `docs/postmortems/`.

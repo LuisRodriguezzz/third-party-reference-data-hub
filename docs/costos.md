@@ -52,42 +52,54 @@ corrida el 2026-10-21.
 | S3 Standard | 0,023 USD por GB-mes (primeros 50 TB) | [Amazon S3 pricing](https://aws.amazon.com/s3/pricing/) |
 | Lambda, Step Functions, CloudWatch (10 métricas y 10 alarmas), SNS por mail | Dentro de sus niveles gratuitos con este uso | páginas de precios de cada servicio |
 
-### Los jobs de Glue (medido)
+### Una corrida completa, medida
 
-DPU-segundos que informa Glue (`aws glue get-job-runs`) en la corrida completa del pipeline del
-**2026-10-21** (`prueba-completa-20261022T015535`):
+La corrida `prueba-completa-20261022T021256` de `refhub-pipeline-dev` del **2026-10-21** terminó
+`SUCCEEDED` de punta a punta: las cuatro fuentes, OpenFIGI, dbt, las métricas y el `VACUUM` de
+las 10 tablas de silver. Duró **31 min 38 s** (23:12:56 a 23:44:35, hora de Buenos Aires). Los
+tiempos salen de `aws stepfunctions get-execution-history`, `aws glue get-job-runs`,
+`aws codebuild batch-get-builds` y `aws athena get-query-execution`.
+
+**Glue** (DPU-segundos que informa Glue; 2 DPU por job):
 
 | Job | Duración | DPU-segundos | Costo |
 |---|---:|---:|---:|
-| `refhub-gleif-bronze-dev` | 205 s | 410 | 0,050 USD |
-| `refhub-gleif-silver-dev` | 153 s | 306 | 0,037 USD |
-| `refhub-gleif-isin-lei-dev` | 274 s | 549 | 0,067 USD |
-| `refhub-openfigi-dev` | 340 s | 680 | 0,083 USD |
-| `refhub-sec-dev` | 136 s | 273 | 0,033 USD |
-| `refhub-gleif-relaciones-dev` | 210 s | 420 | 0,051 USD |
-| **Total Glue** | | **2.638** | **0,32 USD** |
+| `refhub-gleif-bronze-dev` | 71 s | 142 | 0,017 USD |
+| `refhub-gleif-silver-dev` | 103 s | 206 | 0,025 USD |
+| `refhub-gleif-isin-lei-dev` | 145 s | 290 | 0,035 USD |
+| `refhub-openfigi-dev` | 296 s | 592 | 0,072 USD |
+| `refhub-sec-dev` | 89 s | 178 | 0,022 USD |
+| `refhub-gleif-relaciones-dev` | 71 s | 142 | 0,017 USD |
+| **Total Glue** | | **1.550** | **0,19 USD** |
 
-Cuenta: 2.638 DPU-s / 3.600 = 0,73 DPU-hora × 0,44 USD = 0,32 USD.
+Cuenta: 1.550 DPU-s / 3.600 = 0,43 DPU-hora × 0,44 USD = 0,19 USD.
 
-Esa corrida **falló en el paso de dbt** (error de compilación en CodeBuild, a los 70 segundos), así
-que no llegó a métricas ni a `VACUUM`. Los jobs de Glue terminaron todos bien, y son casi todo el
-costo.
+**El resto, también medido:**
 
-Las duraciones cambian con lo que haya para procesar. Una corrida sin nada nuevo igual paga el
-arranque de Spark: medidas entre el 11 y el 21-oct-2026, las corridas que contestaron "nada
-nuevo" o "ya está en silver" tardaron entre 51 y 165 segundos, y aun un job de 30 segundos paga el mínimo de 1 minuto de 2 DPU (0,015 USD).
-
-### El resto (estimado)
-
-| Paso | Cuenta | Costo |
+| Paso | Lo medido | Costo |
 |---|---|---:|
-| CodeBuild: `dbt build` + instalación | ~4 min × 0,005 USD (ADR 0011) | ~0,02 USD, o 0 dentro de los 100 minutos gratis |
-| Athena: lo que leen dbt, las métricas y `VACUUM` | menos de 1 GB × 5 USD/TB | < 0,005 USD |
-| Lambda (5 invocaciones), Step Functions (unas decenas de transiciones) | | ~0 (nivel gratuito) |
+| CodeBuild: `dbt build` + instalación | 2 min 34 s de build (`batch-get-builds`; la fase de `dbt build` en sí, 92 s); el paso de Step Functions, 2 min 39 s | 0,013 USD (0,015 si se cobra el minuto entero); 0 dentro de los 100 minutos gratis del mes |
+| Athena: lo que lee dbt | 127 consultas, 598 MB leídos en total | < 0,01 USD (aun contando el mínimo de 10 MB por consulta) |
+| Athena: métricas y mantenimiento | 22 consultas (2 de la Lambda de métricas, 10 `ALTER TABLE` y 10 `VACUUM`), 1.112 bytes leídos en total; cada una tardó menos de 4 s | ~0 |
+| Lambda | 5 invocaciones (4 descargas + métricas) | 0 (nivel gratuito) |
+| Step Functions | 35 estados recorridos | 0 (nivel gratuito: 4.000 transiciones por mes) |
 
-**Una corrida completa: unos 0,30 a 0,35 USD**, casi todo Glue (medido 0,32 USD de Glue + lo
-estimado de arriba). El PR del hito 6A lo había estimado en ~0,27 USD con las corridas de ese
-momento.
+**Una corrida completa costó unos 0,21 USD**, y el 90 % es Glue.
+
+Para comparar: la corrida anterior del mismo día (`prueba-completa-20261022T015535`, que falló en
+dbt por un error de compilación ya corregido) gastó 2.638 DPU-s de Glue, unos 0,32 USD, porque
+había más para procesar (bronze cargó deltas nuevos de GLEIF y tardó 205 s en vez de 71 s). El
+costo de una corrida depende de cuánto dato nuevo hay: **entre 0,20 y 0,35 USD** en lo medido.
+
+Dónde se va el tiempo: las fuentes tardan 8 min 3 s (la rama más larga es ISIN↔LEI seguida de
+OpenFIGI), dbt 2 min 39 s, las métricas 9 s y el mantenimiento de silver **20 min 47 s**. Este
+último recorre las tablas de a una (`MaxConcurrency = 1`) y cada paso de Athena espera alrededor
+de un minuto en Step Functions aunque la consulta termine en segundos. No cuesta más (un flujo
+Standard cobra por transición, no por minuto), pero es el lugar obvio para acortar la corrida.
+
+Una corrida sin nada nuevo igual paga el arranque de Spark: medidas entre el 11 y el 21-oct-2026,
+las corridas que contestaron "nada nuevo" o "ya está en silver" tardaron entre 51 y 165 segundos,
+y aun un job de 30 segundos paga el mínimo de 1 minuto de 2 DPU (0,015 USD).
 
 ### Lo que queda guardado (medido)
 
@@ -97,8 +109,9 @@ El bucket de datos tenía **861 objetos y 2,32 GB** el 2026-10-21 (`aws s3 ls --
 ## Por qué el schedule está apagado
 
 El schedule diario (`refhub-pipeline-dev-diario`, 18:30 UTC) existe en Terraform pero está
-`DISABLED`. Corriendo todos los días, 30 corridas de 0,27 a 0,35 USD son **entre 8 y 10 USD por
-mes** (estimado), que es justo el budget, y gastaría el crédito en algo que nadie consume a diario.
+`DISABLED`. Corriendo todos los días, 30 corridas de 0,20 a 0,35 USD (lo medido) son **entre 6 y
+10 USD por mes** (estimado), que se come casi todo el budget de 10 USD, y gastaría el crédito en
+algo que nadie consume a diario.
 El pipeline se corre a mano cuando hace falta (runbook, "El pipeline"). Prenderlo es un PR que
 cambia una línea, con el plan mostrando un solo `~`.
 
