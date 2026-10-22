@@ -1,0 +1,47 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "filter": {
+        "formas_legales": {
+          "type": "stop",
+          "stopwords": ["the", "inc", "incorporated", "corp", "corporation", "co", "company",
+                        "ltd", "limited", "llc", "lp", "plc", "nv", "sa", "ag", "se"]
+        }
+      },
+      "analyzer": {
+        "nombres": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "formas_legales"]
+        }
+      },
+      "normalizer": {
+        "codigos": {
+          "type": "custom",
+          "filter": ["lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "nombre": { "type": "keyword" },
+      "nombres": { "type": "text", "analyzer": "nombres" },
+      "pais": { "type": "keyword" },
+      "estado_registro": { "type": "keyword" },
+      "en_golden_copy": { "type": "boolean" },
+      "camino": { "type": "keyword" },
+      "conflicto": { "type": "boolean" },
+      "ambiguo": { "type": "boolean" },
+      "lei": { "type": "keyword", "copy_to": "identificadores" },
+      "ciks": { "type": "keyword", "copy_to": "identificadores" },
+      "isins": { "type": "keyword", "copy_to": "identificadores" },
+      "figis": { "type": "keyword", "copy_to": "identificadores" },
+      "tickers": { "type": "keyword", "copy_to": "identificadores" },
+      "identificadores": { "type": "keyword", "normalizer": "codigos" }
+    }
+  }
+}

@@ -212,7 +212,12 @@ The runbook (Spanish) covers everything from an empty AWS account:
 [`dbt/README.md`](dbt/README.md).
 
 Requirements: an AWS account in `us-east-1`, Terraform ≥ 1.10, AWS CLI, [uv](https://docs.astral.sh/uv/)
-and Python 3.12. Locally, `uv run pytest` runs the business-rule tests (138, no AWS needed).
+and Python 3.12. Locally, `uv run pytest` runs the business-rule tests (143, no AWS needed).
+
+Two local consumers of the golden copy run in Podman: an OpenSearch counterparty search (fuzzy
+names, exact lookup by any identifier, Query DSL) and an Oracle Free risk system that walks the
+consolidation tree with `CONNECT BY` and recursive `WITH`, compared against the published ultimate
+parent: [`local/README.md`](local/README.md) (Spanish).
 
 ## Costs
 
@@ -240,6 +245,7 @@ budget, 1 GB cap per Athena query, log retention, no NAT or VPC endpoints):
 | [0011](docs/adr/0011-dbt-en-el-pipeline.md) | dbt runs in CodeBuild, started by Step Functions; metrics, alarms and VACUUM in the same pipeline. *(proposed)* |
 | [0012](docs/adr/0012-api-de-permisos.md) | Permissions API: policies compiled in CI, a Lambda with an IAM Function URL, a decision log. |
 | [0013](docs/adr/0013-exposicion-por-grupo.md) | Exposure by economic group from the published ultimate parent; synthetic portfolio, declared. *(proposed)* |
+| [0014](docs/adr/0014-consumidores-locales.md) | Two local consumers in Podman (OpenSearch search, Oracle hierarchy queries), not managed services. *(proposed)* |
 
 Postmortems (blameless): [0001 · silver kept a version GLEIF no longer published](docs/postmortems/0001-version-que-gana.md)
 · [0002 · the documented reprocess did not recompute](docs/postmortems/0002-reproceso-que-no-recalculaba.md).

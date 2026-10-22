@@ -1,0 +1,15 @@
+{
+  "size": 0,
+  "query": { "term": { "en_golden_copy": true } },
+  "aggs": {
+    "por_camino": {
+      "terms": { "field": "camino", "missing": "sin_candidato" },
+      "aggs": {
+        "con_lei": { "filter": { "exists": { "field": "lei" } } },
+        "ambiguas": { "filter": { "term": { "ambiguo": true } } },
+        "en_conflicto": { "filter": { "term": { "conflicto": true } } }
+      }
+    },
+    "por_pais": { "terms": { "field": "pais", "size": 5 } }
+  }
+}
