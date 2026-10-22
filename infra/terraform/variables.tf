@@ -19,5 +19,5 @@ variable "environment" {
 variable "refhub_version" {
   description = "Versión de refhub que usan la Lambda y los jobs de Glue. La publica el CI en artifacts/refhub/<versión>/."
   type        = string
-  default     = "0.13.0"
+  default     = "0.14.0"
 }
