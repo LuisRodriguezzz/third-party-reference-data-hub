@@ -9,6 +9,11 @@ authors = [
 requires-python = ">=3.11,<3.13"
 dependencies = []
 
+# La dependencia va donde se usa. rdflib solo la necesita el evaluador de licencias (y la futura
+# Lambda de la API, que la empaqueta): los jobs de Glue instalan el .whl sin extras y no la bajan.
+[project.optional-dependencies]
+licencias = ["rdflib>=7.6"]
+
 [project.scripts]
 refhub = "refhub:main"
 
@@ -18,6 +23,9 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    # El propio paquete con el extra: `uv run` (en local) y `uv sync --all-groups` (en el CI)
+    # instalan el grupo dev, así los tests de licencias tienen rdflib sin cambiar el workflow.
+    "refhub[licencias]",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
 ]

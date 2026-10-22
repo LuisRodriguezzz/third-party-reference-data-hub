@@ -1,0 +1,177 @@
+# Catálogo del hub en DCAT 3 (W3C): qué datasets hay, quién los publica, con qué licencia,
+# cada cuánto cambian y de dónde sale cada uno (linaje con PROV-O).
+#
+# Hay dos clases de dataset:
+# - las fuentes: lo que el hub baja de afuera (GLEIF, ANNA, la SEC, OpenFIGI);
+# - los productos del hub: las tablas silver y la golden copy, que derivan de las fuentes.
+#
+# La licencia va dos veces, a propósito: dct:license (o dct:rights) apunta al documento legal,
+# que es lo que lee una persona; odrl:hasPolicy apunta a la política ODRL de politicas.ttl, que
+# es lo que lee el evaluador (refhub.licencias).
+#
+# El dominio refhub.example.org es un marcador: example.org está reservado para ejemplos, así que
+# los IRIs no chocan con nada real.
+
+@prefix dcat:  <http://www.w3.org/ns/dcat#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix freq:  <http://purl.org/cld/freq/> .
+@prefix odrl:  <http://www.w3.org/ns/odrl/2/> .
+@prefix prov:  <http://www.w3.org/ns/prov#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ag:    <https://refhub.example.org/agente/> .
+@prefix ds:    <https://refhub.example.org/dataset/> .
+@prefix pol:   <https://refhub.example.org/politica/> .
+@prefix hub:   <https://refhub.example.org/> .
+
+hub:catalogo a dcat:Catalog ;
+    dct:title "Catálogo del hub de datos de referencia de terceros"@es ;
+    dct:publisher ag:hub ;
+    dcat:dataset ds:gleif_lei, ds:gleif_isin_lei, ds:sec_empresas, ds:openfigi_tickers,
+        ds:silver_gleif_lei, ds:silver_gleif_isin_lei, ds:silver_sec_empresas,
+        ds:silver_openfigi_tickers, ds:gold_empresas, ds:gold_identificadores,
+        ds:precios_ficticios, ds:precios_cierre_internos .
+
+# --- Quién publica -------------------------------------------------------------------------
+
+ag:gleif a foaf:Organization ;
+    foaf:name "Global Legal Entity Identifier Foundation (GLEIF)" ;
+    foaf:homepage <https://www.gleif.org/> .
+
+ag:anna a foaf:Organization ;
+    foaf:name "Association of National Numbering Agencies (ANNA)" ;
+    foaf:homepage <https://anna-web.org/> .
+
+ag:sec a foaf:Organization ;
+    foaf:name "U.S. Securities and Exchange Commission (SEC)" ;
+    foaf:homepage <https://www.sec.gov/> .
+
+ag:openfigi a foaf:Organization ;
+    foaf:name "OpenFIGI" ;
+    foaf:homepage <https://www.openfigi.com/> .
+
+ag:hub a foaf:Organization ;
+    foaf:name "Hub de datos de referencia (refhub)" .
+
+# Ficticio: no existe. Representa a un proveedor de market data con licencia paga, que es el
+# caso que las fuentes abiertas no muestran (ADR 0001: sin nombres de proveedores reales).
+ag:proveedor_ficticio a foaf:Organization ;
+    foaf:name "Proveedor de precios FICTICIO"@es ;
+    rdfs:comment "Proveedor inventado para mostrar una licencia de market data. No es real."@es .
+
+# --- Fuentes ---------------------------------------------------------------------------------
+
+ds:gleif_lei a dcat:Dataset ;
+    dct:title "GLEIF: datos LEI (golden copy y deltas)"@es ;
+    dct:description "Las entidades con LEI (nivel 1), como las publica GLEIF."@es ;
+    dct:publisher ag:gleif ;
+    dct:license <http://creativecommons.org/publicdomain/zero/1.0/> ;
+    odrl:hasPolicy pol:gleif_cc0 ;
+    dct:accrualPeriodicity freq:threeTimesADay ;   # GLEIF publica tres juegos de archivos por día
+    dcat:landingPage <https://www.gleif.org/en/lei-data/gleif-golden-copy> .
+
+ds:gleif_isin_lei a dcat:Dataset ;
+    dct:title "GLEIF y ANNA: relación ISIN↔LEI"@es ;
+    dct:description "Qué LEI emitió cada ISIN, según las agencias de numeración que participan."@es ;
+    dct:publisher ag:gleif ;
+    dct:contributor ag:anna ;
+    dct:rights [ a dct:RightsStatement ;
+        rdfs:label "Publicado como datos abiertos y gratuitos, sin restricciones (ver docs/licencias-fuentes.md)."@es ] ;
+    odrl:hasPolicy pol:isin_lei_abierto ;
+    dct:accrualPeriodicity freq:daily ;
+    dcat:landingPage <https://www.gleif.org/en/lei-data/lei-mapping/download-isin-to-lei-relationship-files> .
+
+ds:sec_empresas a dcat:Dataset ;
+    dct:title "SEC EDGAR: empresas que cotizan (company_tickers_exchange.json)"@es ;
+    dct:description "CIK, nombre, ticker y bolsa de las empresas que cotizan en EE. UU."@es ;
+    dct:publisher ag:sec ;
+    dct:rights [ a dct:RightsStatement ;
+        rdfs:label "Información pública: se puede copiar y redistribuir; la SEC pide citarla como fuente."@es ;
+        rdfs:seeAlso <https://www.sec.gov/privacy> ] ;
+    odrl:hasPolicy pol:sec_publica_con_cita ;
+    dct:accrualPeriodicity freq:daily ;
+    dcat:landingPage <https://www.sec.gov/files/company_tickers_exchange.json> .
+
+ds:openfigi_tickers a dcat:Dataset ;
+    dct:title "OpenFIGI: FIGI y ticker de cada ISIN"@es ;
+    dct:description "Lo que devuelve la API de mapeo de OpenFIGI para los ISIN de acciones."@es ;
+    dct:publisher ag:openfigi ;
+    dct:license <https://www.openfigi.com/docs/terms-of-service> ;
+    odrl:hasPolicy pol:figi_dominio_publico ;
+    dct:accrualPeriodicity freq:irregular ;   # se consulta a pedido, no hay un archivo publicado
+    dcat:landingPage <https://www.openfigi.com/api> .
+
+# Ficticio, como su proveedor: un feed de precios de cierre con licencia de market data.
+ds:precios_ficticios a dcat:Dataset ;
+    dct:title "Feed de precios FICTICIO"@es ;
+    dct:description "Dataset inventado (no existe ni se ingiere): un feed de precios con licencia de market data."@es ;
+    dct:publisher ag:proveedor_ficticio ;
+    odrl:hasPolicy pol:feed_precios_ficticio ;
+    dct:accrualPeriodicity freq:daily .
+
+# --- Productos del hub -------------------------------------------------------------------------
+# Todos tienen la política del hub (pol:producto_hub) y, además, heredan las restricciones de lo
+# que los originó: el evaluador recorre prov:wasDerivedFrom hacia arriba (ADR 0009).
+# El schedule del pipeline está apagado: se actualizan cuando se corren los jobs.
+
+ds:silver_gleif_lei a dcat:Dataset ;
+    dct:title "silver.gleif_lei"@es ;
+    dct:description "Una fila por LEI, validada; la última versión que publicó GLEIF."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:gleif_lei .
+
+ds:silver_gleif_isin_lei a dcat:Dataset ;
+    dct:title "silver.gleif_isin_lei"@es ;
+    dct:description "La relación ISIN↔LEI validada (dígitos verificadores del ISIN y del LEI)."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:gleif_isin_lei .
+
+ds:silver_sec_empresas a dcat:Dataset ;
+    dct:title "silver.sec_empresas"@es ;
+    dct:description "Una fila por ticker, con el nombre normalizado para cruzar con GLEIF."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:sec_empresas .
+
+# Todavía no existe: llega con el paso 5D (OpenFIGI). Va en el catálogo porque la golden copy
+# la usa para el camino ticker → ISIN → LEI.
+ds:silver_openfigi_tickers a dcat:Dataset ;
+    dct:title "silver.openfigi_tickers"@es ;
+    dct:description "El ticker de cada ISIN de acciones según OpenFIGI (paso 5D, pendiente)."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:openfigi_tickers .
+
+ds:gold_empresas a dcat:Dataset ;
+    dct:title "gold.empresas"@es ;
+    dct:description "Golden copy: una fila por empresa de la SEC, con su LEI cuando se pudo resolver."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:silver_sec_empresas, ds:silver_gleif_lei,
+        ds:silver_gleif_isin_lei, ds:silver_openfigi_tickers .
+
+ds:gold_identificadores a dcat:Dataset ;
+    dct:title "gold.identificadores"@es ;
+    dct:description "Golden copy: los identificadores de cada empresa (LEI, CIK, ticker, ISIN, FIGI)."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:irregular ;
+    prov:wasDerivedFrom ds:silver_sec_empresas, ds:silver_gleif_lei,
+        ds:silver_gleif_isin_lei, ds:silver_openfigi_tickers .
+
+# Ficticio: lo que un banco calcularía con el feed (por ejemplo, el precio de cierre que usa
+# riesgo). Sirve para ver que un derivado hereda las restricciones del feed.
+ds:precios_cierre_internos a dcat:Dataset ;
+    dct:title "Precios de cierre internos (FICTICIO)"@es ;
+    dct:description "Producto inventado, derivado del feed ficticio. No existe en el pipeline."@es ;
+    dct:publisher ag:hub ;
+    odrl:hasPolicy pol:producto_hub ;
+    dct:accrualPeriodicity freq:daily ;
+    prov:wasDerivedFrom ds:precios_ficticios .
