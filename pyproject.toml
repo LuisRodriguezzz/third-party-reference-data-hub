@@ -7,7 +7,9 @@ authors = [
     { name = "Luis Alberto Rodriguez", email = "alberto.rodriguezaguilar@ingenieria.uner.edu.ar" }
 ]
 requires-python = ">=3.11,<3.13"
-dependencies = []
+dependencies = [
+    "rdflib>=7.6.0",
+]
 
 [project.scripts]
 refhub = "refhub:main"

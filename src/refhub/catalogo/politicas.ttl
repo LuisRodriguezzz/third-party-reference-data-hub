@@ -1,0 +1,130 @@
+# Las licencias de las fuentes en ODRL 2.2 (W3C), una política por licencia real.
+# Lo que dice cada licencia, con la URL y la fecha en que se consultó: docs/licencias-fuentes.md.
+#
+# Cómo se lee una política:
+# - odrl:permission: lo que se puede hacer; odrl:prohibition: lo que no.
+# - odrl:action: qué tipo de uso es (odrl:use es cualquier uso; display, derive y distribute son
+#   usos más específicos del vocabulario de ODRL).
+# - odrl:constraint con odrl:purpose: para qué propósito vale la regla (los propósitos y su
+#   jerarquía están en aplicaciones.ttl). Una regla sin propósito vale para todos.
+# - odrl:duty: la obligación que viene con el permiso (por ejemplo, citar la fuente).
+# - odrl:assignee en una regla: la aplicación a la que se le otorga; sin assignee, a todas.
+#
+# Las reglas tienen IRI propio (no son nodos anónimos) para que el evaluador pueda decir con qué
+# regla decidió.
+
+@prefix odrl:  <http://www.w3.org/ns/odrl/2/> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ag:    <https://refhub.example.org/agente/> .
+@prefix app:   <https://refhub.example.org/aplicacion/> .
+@prefix pol:   <https://refhub.example.org/politica/> .
+@prefix prop:  <https://refhub.example.org/proposito/> .
+
+# --- GLEIF: CC0 ---------------------------------------------------------------------------------
+# Dominio público: cualquier uso, comercial incluido, sin obligación de atribución. (Las
+# condiciones de GLEIF sobre su marca y sobre no insinuar que respalda un producto no son
+# reglas sobre el uso del dato, así que no van acá.)
+pol:gleif_cc0 a odrl:Offer ;
+    rdfs:label "GLEIF: datos LEI bajo CC0 1.0"@es ;
+    odrl:assigner ag:gleif ;
+    odrl:permission pol:gleif_cc0_cualquier_uso .
+
+pol:gleif_cc0_cualquier_uso a odrl:Permission ;
+    odrl:action odrl:use .
+
+# --- GLEIF y ANNA: ISIN↔LEI ------------------------------------------------------------------
+# Publicado como datos abiertos, gratis y sin restricciones; no se encontró un texto de licencia
+# con nombre (ver docs/licencias-fuentes.md), así que se modela lo que dicen: cualquier uso.
+pol:isin_lei_abierto a odrl:Offer ;
+    rdfs:label "GLEIF y ANNA: relación ISIN↔LEI abierta, sin restricciones"@es ;
+    odrl:assigner ag:gleif ;
+    odrl:permission pol:isin_lei_cualquier_uso .
+
+pol:isin_lei_cualquier_uso a odrl:Permission ;
+    odrl:action odrl:use .
+
+# --- SEC: información pública, citando la fuente ------------------------------------------------
+# Se puede copiar y redistribuir sin pedir permiso; la SEC pide que se la cite. Se modela como
+# obligación (duty) porque para un banco lo prudente es cumplir el pedido siempre.
+pol:sec_publica_con_cita a odrl:Offer ;
+    rdfs:label "SEC: información pública, se pide citar a la SEC como fuente"@es ;
+    odrl:assigner ag:sec ;
+    odrl:permission pol:sec_cualquier_uso .
+
+pol:sec_cualquier_uso a odrl:Permission ;
+    odrl:action odrl:use ;
+    odrl:duty pol:sec_citar_la_fuente .
+
+pol:sec_citar_la_fuente a odrl:Duty ;
+    odrl:action odrl:attribute ;
+    rdfs:comment "Citar a la SEC (EDGAR) como fuente del dato."@es .
+
+# --- OpenFIGI: FIGI en dominio público -----------------------------------------------------------
+# Los términos dedican los identificadores FIGI al dominio público: cualquier uso, comercial
+# incluido, y redistribución. No exigen atribución.
+pol:figi_dominio_publico a odrl:Offer ;
+    rdfs:label "OpenFIGI: identificadores FIGI en dominio público"@es ;
+    odrl:assigner ag:openfigi ;
+    odrl:permission pol:figi_cualquier_uso .
+
+pol:figi_cualquier_uso a odrl:Permission ;
+    odrl:action odrl:use .
+
+# --- Productos del hub ------------------------------------------------------------------------
+# Lo que el hub permite de sus propias tablas: cualquier uso. No agrega derechos: el evaluador
+# también exige lo que permiten las fuentes de cada tabla (herencia por linaje, ADR 0009).
+pol:producto_hub a odrl:Set ;
+    rdfs:label "Política del hub para sus productos (silver y gold)"@es ;
+    odrl:permission pol:producto_hub_cualquier_uso .
+
+pol:producto_hub_cualquier_uso a odrl:Permission ;
+    odrl:action odrl:use .
+
+# --- Proveedor FICTICIO: licencia de market data ----------------------------------------------
+# FICTICIA, como el proveedor y el feed. Imita lo típico de una licencia de market data:
+# - display interno (mirar el precio en pantalla) permitido, y solo para la aplicación suscripta;
+# - non-display (que un programa use el dato, por ejemplo un algoritmo) prohibido: necesita otra
+#   licencia, que el banco no compró;
+# - datos derivados (lo que el banco calcula con el feed) permitidos solo para uso interno;
+# - redistribución a terceros prohibida.
+# Es un odrl:Agreement porque es un contrato firmado entre el proveedor y el banco.
+pol:feed_precios_ficticio a odrl:Agreement ;
+    rdfs:label "Licencia FICTICIA de un feed de precios (market data)"@es ;
+    odrl:assigner ag:proveedor_ficticio ;
+    odrl:assignee ag:banco ;
+    odrl:conflict odrl:prohibit ;   # si un permiso y una prohibición chocan, gana la prohibición
+    odrl:permission pol:ficticio_permite_display_interno, pol:ficticio_permite_derivados_internos ;
+    odrl:prohibition pol:ficticio_prohibe_non_display, pol:ficticio_prohibe_redistribuir .
+
+pol:ficticio_permite_display_interno a odrl:Permission ;
+    odrl:action odrl:display ;
+    odrl:assignee app:monitor_mercado ;   # la licencia se paga por aplicación
+    odrl:constraint [
+        odrl:leftOperand odrl:purpose ;
+        odrl:operator odrl:isA ;
+        odrl:rightOperand prop:display_interno
+    ] .
+
+pol:ficticio_permite_derivados_internos a odrl:Permission ;
+    odrl:action odrl:derive ;
+    odrl:constraint [
+        odrl:leftOperand odrl:purpose ;
+        odrl:operator odrl:isA ;
+        odrl:rightOperand prop:uso_interno
+    ] .
+
+pol:ficticio_prohibe_non_display a odrl:Prohibition ;
+    odrl:action odrl:use ;
+    odrl:constraint [
+        odrl:leftOperand odrl:purpose ;
+        odrl:operator odrl:isA ;
+        odrl:rightOperand prop:uso_no_display
+    ] .
+
+pol:ficticio_prohibe_redistribuir a odrl:Prohibition ;
+    odrl:action odrl:distribute ;
+    odrl:constraint [
+        odrl:leftOperand odrl:purpose ;
+        odrl:operator odrl:isA ;
+        odrl:rightOperand prop:distribucion_externa
+    ] .

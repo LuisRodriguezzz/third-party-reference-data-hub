@@ -1,0 +1,19 @@
+# ¿De qué fuentes deriva la golden copy, quién las publica y con qué política?
+#
+# Se sigue prov:wasDerivedFrom hacia arriba desde las tablas gold; una fuente es lo que ya no
+# deriva de nada (lo que el hub baja de afuera).
+
+PREFIX dct:  <http://purl.org/dc/terms/>
+PREFIX odrl: <http://www.w3.org/ns/odrl/2/>
+PREFIX prov: <http://www.w3.org/ns/prov#>
+PREFIX ds:   <https://refhub.example.org/dataset/>
+
+SELECT DISTINCT ?fuente ?publicador ?politica
+WHERE {
+    VALUES ?gold { ds:gold_empresas ds:gold_identificadores }
+    ?gold prov:wasDerivedFrom+ ?fuente .
+    FILTER NOT EXISTS { ?fuente prov:wasDerivedFrom ?algo }
+    ?fuente dct:publisher ?publicador ;
+        odrl:hasPolicy ?politica .
+}
+ORDER BY ?fuente
