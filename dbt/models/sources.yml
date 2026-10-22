@@ -12,6 +12,10 @@ sources:
         description: Una fila por ISIN, con el LEI de la empresa que lo emitió (GLEIF y ANNA).
       - name: sec_empresas
         description: Las empresas que cotizan en EE. UU. según la SEC, una fila por ticker.
+      - name: gleif_relaciones
+        description: >
+          Las relaciones de GLEIF (nivel 2), la última foto completa: una fila por child_lei y
+          relationship_type, con la controlante, la gestora o la casa matriz en parent_lei.
       - name: openfigi_tickers
         description: >
           Una fila por ISIN de acciones de EE. UU. mandado a OpenFIGI, con su FIGI y su ticker
